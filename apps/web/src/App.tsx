@@ -575,6 +575,7 @@ const AGENT_CACHE_TTL_MS = 30_000;
 const PROVIDER_CATALOG_CACHE_TTL_MS = 20_000;
 const CORE_REFRESH_INTERVAL_MS = 5_000;
 const SELECTED_THREAD_REFRESH_INTERVAL_MS = 1_000;
+const SELECTED_THREAD_REFRESH_INTERVAL_MS_WITH_SSE = 10_000;
 const DEBUG_UI_ENABLED = import.meta.env.MODE !== "production";
 const MOBILE_SIDEBAR_WIDTH_PX = 256;
 const MOBILE_SWIPE_EDGE_PX = 24;
@@ -1182,6 +1183,7 @@ export function App(): React.JSX.Element {
   const [rateLimits, setRateLimits] = useState<
     Awaited<ReturnType<typeof getAccountRateLimits>> | null
   >(null);
+  const [eventsConnected, setEventsConnected] = useState(false);
   const [dragOverGroupKey, setDragOverGroupKey] = useState<string | null>(null);
   const [draggedGroupKey, setDraggedGroupKey] = useState<string | null>(null);
 
@@ -2560,7 +2562,9 @@ export function App(): React.JSX.Element {
       }
       selectedThreadRefreshIntervalRef.current = window.setInterval(
         refreshSelectedThreadData,
-        SELECTED_THREAD_REFRESH_INTERVAL_MS,
+        eventsConnected
+          ? SELECTED_THREAD_REFRESH_INTERVAL_MS_WITH_SSE
+          : SELECTED_THREAD_REFRESH_INTERVAL_MS,
       );
     };
 
@@ -2588,7 +2592,7 @@ export function App(): React.JSX.Element {
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [selectedThreadId]);
+  }, [eventsConnected, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId) {
@@ -2708,6 +2712,7 @@ export function App(): React.JSX.Element {
 
       source = new EventSource(unifiedEventsUrl);
       source.onopen = () => {
+        setEventsConnected(true);
         reconnectDelayMs = 1000;
         if (hasOpenedConnection) {
           return;
@@ -2774,6 +2779,7 @@ export function App(): React.JSX.Element {
       };
 
       source.onerror = () => {
+        setEventsConnected(false);
         if (source) {
           source.close();
           source = null;
@@ -2800,6 +2806,7 @@ export function App(): React.JSX.Element {
         source.close();
         source = null;
       }
+      setEventsConnected(false);
     };
 
     const onVisibilityChange = () => {
