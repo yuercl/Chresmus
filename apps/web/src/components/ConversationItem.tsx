@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { GitBranch } from "lucide-react";
+import { memo, useEffect, useState } from "react";
+import { GitBranch, X } from "lucide-react";
 import type { UnifiedItem, UnifiedItemKind } from "@farfield/unified-surface";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { CommandBlock } from "./CommandBlock";
@@ -67,6 +67,92 @@ interface RendererContext {
   onSelectThread: (threadId: string) => void;
 }
 
+function ImagePreview({
+  images,
+}: {
+  images: Array<{ url: string }>;
+}): React.JSX.Element | null {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (previewUrl === null) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPreviewUrl(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [previewUrl]);
+
+  if (images.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <div className="grid gap-2">
+        {images.map((image, index) => (
+          <button
+            key={`${image.url}-${String(index)}`}
+            type="button"
+            onClick={() => {
+              setPreviewUrl(image.url);
+            }}
+            className="overflow-hidden rounded-xl border border-border/60 text-left transition hover:border-border hover:opacity-95"
+            title="Open image preview"
+            aria-label="Open image preview"
+          >
+            <img
+              src={image.url}
+              alt="User attachment"
+              className="max-h-80 w-full object-cover"
+              loading="lazy"
+              decoding="async"
+            />
+          </button>
+        ))}
+      </div>
+
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+          onClick={() => {
+            setPreviewUrl(null);
+          }}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+            onClick={(event) => {
+              event.stopPropagation();
+              setPreviewUrl(null);
+            }}
+            aria-label="Close image preview"
+            title="Close image preview"
+          >
+            <X size={18} />
+          </button>
+          <img
+            src={previewUrl}
+            alt="Image preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 type ItemRendererMap = {
   [K in UnifiedItemKind]: (
     args: RendererContext & { item: Extract<UnifiedItem, { type: K }> },
@@ -85,17 +171,8 @@ const ITEM_RENDERERS = {
       <div className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-2.5 text-sm text-foreground leading-relaxed">
           {images.length > 0 && (
-            <div className={text ? "mb-3 grid gap-2" : "grid gap-2"}>
-              {images.map((image, index) => (
-                <img
-                  key={`${image.url}-${String(index)}`}
-                  src={image.url}
-                  alt="User attachment"
-                  className="max-h-80 rounded-xl border border-border/60 object-cover"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ))}
+            <div className={text ? "mb-3" : undefined}>
+              <ImagePreview images={images} />
             </div>
           )}
           {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
@@ -115,17 +192,8 @@ const ITEM_RENDERERS = {
       <div className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-2.5 text-sm text-foreground leading-relaxed">
           {images.length > 0 && (
-            <div className={text ? "mb-3 grid gap-2" : "grid gap-2"}>
-              {images.map((image, index) => (
-                <img
-                  key={`${image.url}-${String(index)}`}
-                  src={image.url}
-                  alt="User attachment"
-                  className="max-h-80 rounded-xl border border-border/60 object-cover"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ))}
+            <div className={text ? "mb-3" : undefined}>
+              <ImagePreview images={images} />
             </div>
           )}
           {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
