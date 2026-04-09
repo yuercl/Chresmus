@@ -133,6 +133,7 @@ type PendingApprovalRequest = ReturnType<typeof getPendingApprovalRequests>[numb
 type PendingThreadRequest = ReturnType<typeof getPendingThreadRequests>[number];
 type PendingRequestId = PendingRequest["id"];
 type SavedServerTarget = ReturnType<typeof listSavedServerTargets>[number];
+type ModelEntry = ModelsResponse["data"][number];
 type Thread = SidebarThreadsResponse["rows"][number] & {
   serverId: string;
   serverLabel: string;
@@ -546,6 +547,81 @@ function toErrorMessage(err: unknown): string {
 
 const DEFAULT_CODEX_APPROVAL_POLICY = "never";
 const DEFAULT_CODEX_SANDBOX = "danger-full-access";
+
+type ParsedModelVersion = {
+  family: string;
+  major: number;
+  minor: number;
+  patch: number;
+};
+
+function parseModelVersion(value: string): ParsedModelVersion | null {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "-");
+  const match = /^([a-z]+(?:-[a-z]+)*)-(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(
+    normalized,
+  );
+  if (!match) {
+    return null;
+  }
+  const family = match[1];
+  const majorText = match[2];
+  if (!family || !majorText) {
+    return null;
+  }
+  return {
+    family,
+    major: Number.parseInt(majorText, 10),
+    minor: match[3] ? Number.parseInt(match[3], 10) : 0,
+    patch: match[4] ? Number.parseInt(match[4], 10) : 0,
+  };
+}
+
+function compareModelVersions(
+  left: ParsedModelVersion,
+  right: ParsedModelVersion,
+): number {
+  if (left.family !== right.family) {
+    return left.family.localeCompare(right.family);
+  }
+  if (left.major !== right.major) {
+    return right.major - left.major;
+  }
+  if (left.minor !== right.minor) {
+    return right.minor - left.minor;
+  }
+  if (left.patch !== right.patch) {
+    return right.patch - left.patch;
+  }
+  return 0;
+}
+
+function compareModelsByPreference(left: ModelEntry, right: ModelEntry): number {
+  const leftVersion =
+    parseModelVersion(left.id) ?? parseModelVersion(left.displayName);
+  const rightVersion =
+    parseModelVersion(right.id) ?? parseModelVersion(right.displayName);
+
+  if (leftVersion && rightVersion) {
+    const versionComparison = compareModelVersions(leftVersion, rightVersion);
+    if (versionComparison !== 0) {
+      return versionComparison;
+    }
+  } else if (leftVersion || rightVersion) {
+    return leftVersion ? -1 : 1;
+  }
+
+  if (left.isDefault !== right.isDefault) {
+    return left.isDefault ? -1 : 1;
+  }
+
+  const leftLabel = left.displayName || left.id;
+  const rightLabel = right.displayName || right.id;
+  return leftLabel.localeCompare(rightLabel);
+}
+
+function sortModelsByPreference(models: ReadonlyArray<ModelEntry>): ModelEntry[] {
+  return [...models].sort(compareModelsByPreference);
+}
 
 function buildThreadListErrorMessage(
   errors: ThreadListProviderErrors,
@@ -1765,6 +1841,18 @@ export function App(): React.JSX.Element {
     modes,
     selectedReasoningEffort,
   ]);
+  const sortedModels = useMemo(() => sortModelsByPreference(models), [models]);
+  const preferredModel = useMemo(
+    () => sortedModels.find((entry) => !entry.hidden) ?? sortedModels[0] ?? null,
+    [sortedModels],
+  );
+  const appDefaultModelId = preferredModel?.id ?? ASSUMED_APP_DEFAULT_MODEL;
+  const appDefaultModelLabel = preferredModel
+    ? preferredModel.displayName && preferredModel.displayName !== preferredModel.id
+      ? `${preferredModel.displayName} (${preferredModel.id})`
+      : preferredModel.displayName || preferredModel.id
+    : ASSUMED_APP_DEFAULT_MODEL;
+  const preferredNewThreadModelId = selectedModelId || appDefaultModelId;
   const appDefaultEffortLabel = useMemo(() => {
     const activeModeKey = selectedModeKey || defaultModeOption?.mode || "";
     const modeDefaultEffort = normalizeNullableModeValue(
@@ -1778,7 +1866,7 @@ export function App(): React.JSX.Element {
     const activeModelId =
       selectedModelId ||
       normalizeNullableModeValue(conversationState?.latestModel) ||
-      models.find((entry) => entry.isDefault)?.id ||
+      appDefaultModelId ||
       "";
     const modelDefaultEffort = normalizeNullableModeValue(
       models.find((entry) => entry.id === activeModelId)
@@ -1789,6 +1877,7 @@ export function App(): React.JSX.Element {
     }
     return ASSUMED_APP_DEFAULT_EFFORT;
   }, [
+    appDefaultModelId,
     conversationState?.latestModel,
     defaultModeOption?.mode,
     modes,
@@ -1808,7 +1897,7 @@ export function App(): React.JSX.Element {
 
   const modelOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const m of models) {
+    for (const m of sortedModels) {
       const label =
         m.displayName && m.displayName !== m.id
           ? `${m.displayName} (${m.id})`
@@ -1820,11 +1909,14 @@ export function App(): React.JSX.Element {
     if (selectedModelId && !map.has(selectedModelId))
       map.set(selectedModelId, selectedModelId);
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
-  }, [conversationState?.latestModel, models, selectedModelId]);
-  const modelOptionsWithoutAssumedDefault = useMemo(
+  }, [conversationState?.latestModel, selectedModelId, sortedModels]);
+  const modelOptionsWithoutAppDefault = useMemo(
     () =>
-      modelOptions.filter((option) => option.id !== ASSUMED_APP_DEFAULT_MODEL),
-    [modelOptions],
+      modelOptions.filter(
+        (option) =>
+          option.id !== appDefaultModelId || selectedModelId === option.id,
+      ),
+    [appDefaultModelId, modelOptions, selectedModelId],
   );
 
   const deferredConversationState = useDeferredValue(conversationState);
@@ -3464,7 +3556,18 @@ export function App(): React.JSX.Element {
           const created = await createThread({
             agentId: selectedAgentId,
             baseUrlOverride: targetServer.baseUrl,
+            ...(preferredNewThreadModelId
+              ? { model: preferredNewThreadModelId }
+              : {}),
           });
+          if (
+            preferredNewThreadModelId &&
+            created.thread.latestModel !== preferredNewThreadModelId
+          ) {
+            throw new Error(
+              `Thread started with unexpected model: requested ${preferredNewThreadModelId}, received ${created.thread.latestModel || "none"}`,
+            );
+          }
           threadId = created.threadId;
           threadAgentId = selectedAgentId;
           threadProviderByIdRef.current.set(threadId, threadAgentId);
@@ -3503,6 +3606,7 @@ export function App(): React.JSX.Element {
       canSendMessageForActiveAgent,
       hasResolvedSelectedThreadProvider,
       liveState?.ownerClientId,
+      preferredNewThreadModelId,
       refreshAll,
       selectedAgentId,
       selectedThread?.serverBaseUrl,
@@ -3821,6 +3925,9 @@ export function App(): React.JSX.Element {
           cwd: trimmedProjectPath,
           agentId: targetAgentId,
           baseUrlOverride: targetServer.baseUrl,
+          ...(preferredNewThreadModelId
+            ? { model: preferredNewThreadModelId }
+            : {}),
           ...(targetAgentId === "codex"
             ? {
                 approvalPolicy: DEFAULT_CODEX_APPROVAL_POLICY,
@@ -3828,6 +3935,14 @@ export function App(): React.JSX.Element {
               }
             : {}),
         });
+        if (
+          preferredNewThreadModelId &&
+          created.thread.latestModel !== preferredNewThreadModelId
+        ) {
+          throw new Error(
+            `Thread started with unexpected model: requested ${preferredNewThreadModelId}, received ${created.thread.latestModel || "none"}`,
+          );
+        }
         threadProviderByIdRef.current.set(created.threadId, targetAgentId);
         optimisticSelectedThreadIdsRef.current.add(created.threadId);
         upsertSidebarThread(
@@ -3852,6 +3967,7 @@ export function App(): React.JSX.Element {
       agentsById,
       closeMobileSidebar,
       primaryServerTarget,
+      preferredNewThreadModelId,
       refreshAll,
       selectedAgentId,
       serverBaseUrl,
@@ -5070,9 +5186,9 @@ export function App(): React.JSX.Element {
                                 </SelectTrigger>
                                 <SelectContent position="popper">
                                   <SelectItem value={APP_DEFAULT_VALUE}>
-                                    {ASSUMED_APP_DEFAULT_MODEL}
+                                    {appDefaultModelLabel}
                                   </SelectItem>
-                                  {modelOptionsWithoutAssumedDefault.map(
+                                  {modelOptionsWithoutAppDefault.map(
                                     (option) => (
                                       <SelectItem
                                         key={option.id}
