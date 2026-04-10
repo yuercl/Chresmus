@@ -878,13 +878,14 @@ export async function getLiveState(
 export async function getStreamEvents(
   threadId: string,
   provider: AgentId,
+  limit = 20,
   baseUrlOverride?: string,
 ): Promise<z.infer<typeof StreamEventsResponseSchema>> {
   const result = await runUnifiedCommand({
     kind: "readStreamEvents",
     provider,
     threadId,
-    limit: 80,
+    limit,
   }, baseUrlOverride);
 
   if (result.kind !== "readStreamEvents") {

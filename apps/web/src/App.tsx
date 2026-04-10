@@ -77,17 +77,13 @@ import {
 } from "@/lib/sidebar-prefs";
 import {
   UnifiedEventSchema,
+  type UnifiedEvent,
+  type UnifiedItem,
   type UnifiedThreadRequestResponse,
   type UnifiedFeatureAvailability,
   type UnifiedFeatureId,
   type UnifiedInputPart,
 } from "@farfield/unified-surface";
-import {
-  parseThreadStreamEvent,
-  type ThreadConversationState as ProtocolThreadConversationState,
-  type ThreadStreamEvent,
-} from "@farfield/protocol";
-import { reduceThreadStreamEvents } from "../../../packages/codex-api/src/live-state";
 import { useTheme } from "@/hooks/useTheme";
 import { ChatTimeline, type ChatTimelineEntry } from "@/components/ChatTimeline";
 import { ChatComposer } from "@/components/ChatComposer";
@@ -151,9 +147,8 @@ type ConversationTurn = NonNullable<
   ReadThreadResponse["thread"]
 >["turns"][number];
 type ConversationTurnItem = NonNullable<ConversationTurn["items"]>[number];
-type ProtocolConversationTurn = ProtocolThreadConversationState["turns"][number];
-type ProtocolConversationTurnItem = ProtocolConversationTurn["items"][number];
 type FlatConversationItem = ChatTimelineEntry;
+type UnifiedThreadDeltaEvent = Extract<UnifiedEvent, { kind: "threadDelta" }>;
 
 interface RefreshFlags {
   refreshCore: boolean;
@@ -174,19 +169,6 @@ const TokenUsageCamelCaseSchema = z
     total: z.object({ totalTokens: z.number() }).passthrough(),
     last: z.object({ totalTokens: z.number() }).passthrough(),
     modelContextWindow: z.number().nullable(),
-  })
-  .passthrough();
-
-const StreamTokenUsageUpdatedEventSchema = z
-  .object({
-    type: z.literal("broadcast"),
-    method: z.literal("thread/tokenUsage/updated"),
-    params: z
-      .object({
-        threadId: z.string(),
-        tokenUsage: z.union([TokenUsageSnakeCaseSchema, TokenUsageCamelCaseSchema]),
-      })
-      .passthrough(),
   })
   .passthrough();
 
@@ -394,28 +376,6 @@ function parseTokenUsageInfo(
       sessionTotalTokens: camel.data.total.totalTokens,
       contextWindow: camel.data.modelContextWindow,
     };
-  }
-
-  return null;
-}
-
-function getLatestTokenUsageFromStreamEvents(
-  events: StreamEventsResponse["events"],
-  threadId: string | null,
-): NormalizedTokenUsage | null {
-  if (!threadId) {
-    return null;
-  }
-
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const parsed = StreamTokenUsageUpdatedEventSchema.safeParse(events[index]);
-    if (!parsed.success) {
-      continue;
-    }
-    if (parsed.data.params.threadId !== threadId) {
-      continue;
-    }
-    return parseTokenUsageInfo(parsed.data.params.tokenUsage);
   }
 
   return null;
@@ -1043,305 +1003,314 @@ function buildReadThreadSyncSignature(
   ].join("|");
 }
 
-function parseThreadStreamBroadcasts(
-  events: StreamEventsResponse["events"],
-): ThreadStreamEvent[] {
-  const broadcasts: ThreadStreamEvent[] = [];
-
-  for (const event of events) {
-    try {
-      broadcasts.push(parseThreadStreamEvent(event));
-    } catch {}
-  }
-
-  return broadcasts;
-}
-
-function mapProtocolCommandActions(
-  item: Extract<ProtocolConversationTurnItem, { type: "commandExecution" }>,
-): Extract<ConversationTurnItem, { type: "commandExecution" }>["commandActions"] {
-  if (!item.commandActions) {
-    return undefined;
-  }
-
-  return item.commandActions.map((action: (typeof item.commandActions)[number]) => ({
-    type: action.type,
-    ...(action.command !== undefined ? { command: action.command } : {}),
-    ...(action.name !== undefined ? { name: action.name } : {}),
-    ...(action.path !== undefined ? { path: action.path } : {}),
-    ...(action.query !== undefined ? { query: action.query } : {}),
-  }));
-}
-
-function mapSupportedProtocolItemToUnifiedItem(
-  item: ProtocolConversationTurnItem,
-): ConversationTurnItem | null {
-  switch (item.type) {
-    case "agentMessage":
-      return {
-        id: item.id,
-        type: "agentMessage",
-        text: item.text,
-      };
-
-    case "plan":
-      return {
-        id: item.id,
-        type: "plan",
-        text: item.text,
-      };
-
-    case "reasoning":
-      return {
-        id: item.id,
-        type: "reasoning",
-        ...(item.summary !== undefined ? { summary: item.summary } : {}),
-        ...(item.text !== undefined ? { text: item.text } : {}),
-      };
-
-    case "commandExecution":
-      return {
-        id: item.id,
-        type: "commandExecution",
-        command: item.command,
-        status: item.status,
-        ...(item.cwd !== undefined ? { cwd: item.cwd } : {}),
-        ...(item.processId !== undefined ? { processId: item.processId } : {}),
-        ...(item.commandActions !== undefined
-          ? { commandActions: mapProtocolCommandActions(item) }
-          : {}),
-        ...(item.aggregatedOutput !== undefined
-          ? { aggregatedOutput: item.aggregatedOutput }
-          : {}),
-        ...(item.exitCode !== undefined ? { exitCode: item.exitCode } : {}),
-        ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
-      };
-
-    default:
-      return null;
-  }
-}
-
-function mergeSupportedStreamingItem(
-  baseItem: ConversationTurnItem,
-  streamedItem: ConversationTurnItem,
-): ConversationTurnItem {
-  if (baseItem.type !== streamedItem.type || baseItem.id !== streamedItem.id) {
-    return baseItem;
-  }
-
-  switch (baseItem.type) {
-    case "agentMessage":
-      if (streamedItem.type !== "agentMessage") {
-        return baseItem;
-      }
-      return {
-        ...baseItem,
-        text: streamedItem.text,
-      };
-
-    case "plan":
-      if (streamedItem.type !== "plan") {
-        return baseItem;
-      }
-      return {
-        ...baseItem,
-        text: streamedItem.text,
-      };
-
-    case "reasoning":
-      if (streamedItem.type !== "reasoning") {
-        return baseItem;
-      }
-      return {
-        ...baseItem,
-        ...(streamedItem.summary !== undefined
-          ? { summary: streamedItem.summary }
-          : {}),
-        ...(streamedItem.text !== undefined ? { text: streamedItem.text } : {}),
-      };
-
-    case "commandExecution":
-      if (streamedItem.type !== "commandExecution") {
-        return baseItem;
-      }
-      return {
-        ...baseItem,
-        command: streamedItem.command,
-        status: streamedItem.status,
-        ...(streamedItem.cwd !== undefined ? { cwd: streamedItem.cwd } : {}),
-        ...(streamedItem.processId !== undefined
-          ? { processId: streamedItem.processId }
-          : {}),
-        ...(streamedItem.commandActions !== undefined
-          ? { commandActions: streamedItem.commandActions }
-          : {}),
-        ...(streamedItem.aggregatedOutput !== undefined
-          ? { aggregatedOutput: streamedItem.aggregatedOutput }
-          : {}),
-        ...(streamedItem.exitCode !== undefined
-          ? { exitCode: streamedItem.exitCode }
-          : {}),
-        ...(streamedItem.durationMs !== undefined
-          ? { durationMs: streamedItem.durationMs }
-          : {}),
-      };
-
-    default:
-      return baseItem;
-  }
-}
-
-function protocolTurnIdentity(
-  threadId: string,
-  turn: ProtocolConversationTurn,
-  turnIndex: number,
-): string {
-  return turn.id ?? turn.turnId ?? `${threadId}-${String(turnIndex + 1)}`;
-}
-
 function unifiedTurnIdentity(turn: ConversationTurn): string {
   return turn.id ?? turn.turnId ?? "";
 }
 
-function mapSupportedProtocolTurnToUnifiedTurn(
-  threadId: string,
-  turn: ProtocolConversationTurn,
-  turnIndex: number,
-): ConversationTurn | null {
-  const mappedItems = turn.items
-    .map(mapSupportedProtocolItemToUnifiedItem)
-    .filter(
-      (item: ConversationTurnItem | null): item is ConversationTurnItem =>
-        item !== null,
-    );
-
-  if (mappedItems.length === 0) {
-    return null;
+function applyThreadSnapshotMetadata(
+  thread: NonNullable<ReadThreadResponse["thread"]>,
+  snapshot: UnifiedThreadDeltaEvent["snapshot"],
+): NonNullable<ReadThreadResponse["thread"]> {
+  if (!snapshot) {
+    return thread;
   }
 
   return {
-    id: protocolTurnIdentity(threadId, turn, turnIndex),
-    ...(turn.turnId !== undefined ? { turnId: turn.turnId } : {}),
-    status: turn.status,
-    ...(turn.turnStartedAtMs !== undefined
-      ? { turnStartedAtMs: turn.turnStartedAtMs }
+    ...thread,
+    ...(snapshot.updatedAt !== undefined ? { updatedAt: snapshot.updatedAt } : {}),
+    ...(snapshot.title !== undefined ? { title: snapshot.title } : {}),
+    ...(snapshot.latestCollaborationMode !== undefined
+      ? { latestCollaborationMode: snapshot.latestCollaborationMode }
       : {}),
-    ...(turn.finalAssistantStartedAtMs !== undefined
-      ? { finalAssistantStartedAtMs: turn.finalAssistantStartedAtMs }
+    ...(snapshot.latestModel !== undefined ? { latestModel: snapshot.latestModel } : {}),
+    ...(snapshot.latestReasoningEffort !== undefined
+      ? { latestReasoningEffort: snapshot.latestReasoningEffort }
       : {}),
-    items: mappedItems,
+    ...(snapshot.latestTokenUsageInfo !== undefined
+      ? { latestTokenUsageInfo: snapshot.latestTokenUsageInfo }
+      : {}),
   };
 }
 
-function mergeStreamConversationState(
-  baseState: NonNullable<ReadThreadResponse["thread"]> | null | undefined,
-  streamedState: ProtocolThreadConversationState | null,
-): NonNullable<ReadThreadResponse["thread"]> | null {
-  if (!baseState || !streamedState || baseState.id !== streamedState.id) {
-    return baseState ?? null;
+function createDeltaPlaceholderItem(
+  itemId: string,
+  itemType:
+    | "agentMessage"
+    | "plan"
+    | "commandExecution"
+    | "reasoningText"
+    | "reasoningSummaryText",
+  summaryIndex?: number,
+): ConversationTurnItem {
+  switch (itemType) {
+    case "agentMessage":
+      return {
+        id: itemId,
+        type: "agentMessage",
+        text: "",
+      };
+    case "plan":
+      return {
+        id: itemId,
+        type: "plan",
+        text: "",
+      };
+    case "commandExecution":
+      return {
+        id: itemId,
+        type: "commandExecution",
+        command: "",
+        status: "inProgress",
+        aggregatedOutput: "",
+      };
+    case "reasoningText":
+      return {
+        id: itemId,
+        type: "reasoning",
+        text: "",
+      };
+    case "reasoningSummaryText":
+      return {
+        id: itemId,
+        type: "reasoning",
+        summary:
+          summaryIndex === undefined
+            ? [""]
+            : Array.from({ length: summaryIndex + 1 }, () => ""),
+      };
   }
+}
 
-  const mergedTurns = [...baseState.turns];
+function updateTurnItemById(
+  turn: ConversationTurn,
+  itemId: string,
+  updater: (item: ConversationTurnItem) => ConversationTurnItem,
+  createItem: () => ConversationTurnItem,
+): ConversationTurn {
+  const items = [...turn.items];
+  const itemIndex = items.findIndex((item) => item.id === itemId);
 
-  for (
-    let streamedTurnIndex = 0;
-    streamedTurnIndex < streamedState.turns.length;
-    streamedTurnIndex += 1
-  ) {
-    const streamedTurn = streamedState.turns[streamedTurnIndex];
-    if (!streamedTurn) {
-      continue;
-    }
-
-    const streamedTurnKey = protocolTurnIdentity(
-      streamedState.id,
-      streamedTurn,
-      streamedTurnIndex,
-    );
-    const existingTurnIndex = mergedTurns.findIndex(
-      (turn) => unifiedTurnIdentity(turn) === streamedTurnKey,
-    );
-
-    if (existingTurnIndex === -1) {
-      const appendedTurn = mapSupportedProtocolTurnToUnifiedTurn(
-        streamedState.id,
-        streamedTurn,
-        streamedTurnIndex,
-      );
-      if (appendedTurn) {
-        mergedTurns.push(appendedTurn);
-      }
-      continue;
-    }
-
-    const existingTurn = mergedTurns[existingTurnIndex];
-    if (!existingTurn) {
-      continue;
-    }
-
-    const mergedItems = [...existingTurn.items];
-    for (const streamedItem of streamedTurn.items) {
-      const mappedStreamedItem = mapSupportedProtocolItemToUnifiedItem(
-        streamedItem,
-      );
-      if (!mappedStreamedItem) {
-        continue;
-      }
-
-      const existingItemIndex = mergedItems.findIndex(
-        (item) => item.id === mappedStreamedItem.id,
-      );
-      if (existingItemIndex === -1) {
-        mergedItems.push(mappedStreamedItem);
-        continue;
-      }
-
-      const existingItem = mergedItems[existingItemIndex];
-      if (!existingItem) {
-        continue;
-      }
-
-      mergedItems[existingItemIndex] = mergeSupportedStreamingItem(
-        existingItem,
-        mappedStreamedItem,
-      );
-    }
-
-    mergedTurns[existingTurnIndex] = {
-      ...existingTurn,
-      status: streamedTurn.status,
-      ...(streamedTurn.turnStartedAtMs !== undefined
-        ? { turnStartedAtMs: streamedTurn.turnStartedAtMs }
-        : {}),
-      ...(streamedTurn.finalAssistantStartedAtMs !== undefined
-        ? { finalAssistantStartedAtMs: streamedTurn.finalAssistantStartedAtMs }
-        : {}),
-      items: mergedItems,
+  if (itemIndex === -1) {
+    items.push(updater(createItem()));
+    return {
+      ...turn,
+      items,
     };
   }
 
+  const existingItem = items[itemIndex];
+  if (!existingItem) {
+    return turn;
+  }
+
+  items[itemIndex] = updater(existingItem);
   return {
-    ...baseState,
-    turns: mergedTurns,
-    ...(streamedState.updatedAt !== undefined
-      ? {
-          updatedAt:
-            baseState.updatedAt !== undefined
-              ? Math.max(baseState.updatedAt, streamedState.updatedAt)
-              : streamedState.updatedAt,
-        }
-      : {}),
-    ...(streamedState.title !== undefined ? { title: streamedState.title } : {}),
-    ...(streamedState.latestModel !== undefined
-      ? { latestModel: streamedState.latestModel ?? null }
-      : {}),
-    ...(streamedState.latestReasoningEffort !== undefined
-      ? {
-          latestReasoningEffort: streamedState.latestReasoningEffort ?? null,
-        }
-      : {}),
+    ...turn,
+    items,
   };
+}
+
+function updateThreadTurnById(
+  thread: NonNullable<ReadThreadResponse["thread"]>,
+  turnId: string,
+  updater: (turn: ConversationTurn) => ConversationTurn,
+  createTurn: () => ConversationTurn,
+): NonNullable<ReadThreadResponse["thread"]> {
+  const turns = [...thread.turns];
+  const turnIndex = turns.findIndex((turn) => unifiedTurnIdentity(turn) === turnId);
+
+  if (turnIndex === -1) {
+    turns.push(updater(createTurn()));
+    return {
+      ...thread,
+      turns,
+    };
+  }
+
+  const existingTurn = turns[turnIndex];
+  if (!existingTurn) {
+    return thread;
+  }
+
+  turns[turnIndex] = updater(existingTurn);
+  return {
+    ...thread,
+    turns,
+  };
+}
+
+function applyUnifiedThreadDelta(
+  thread: NonNullable<ReadThreadResponse["thread"]>,
+  event: UnifiedThreadDeltaEvent,
+): NonNullable<ReadThreadResponse["thread"]> {
+  const threadWithSnapshot = applyThreadSnapshotMetadata(thread, event.snapshot);
+  const delta = event.delta;
+
+  switch (delta.type) {
+    case "turnUpdated": {
+      const turns = [...threadWithSnapshot.turns];
+      const turnId = unifiedTurnIdentity(delta.turn);
+      const turnIndex = turns.findIndex((turn) => unifiedTurnIdentity(turn) === turnId);
+
+      if (turnIndex === -1) {
+        turns.push(delta.turn);
+      } else {
+        turns[turnIndex] = delta.turn;
+      }
+
+      return {
+        ...threadWithSnapshot,
+        turns,
+      };
+    }
+    case "turnDiffUpdated":
+      return updateThreadTurnById(
+        threadWithSnapshot,
+        delta.turnId,
+        (turn) => ({
+          ...turn,
+          diff: delta.diff,
+        }),
+        () => ({
+          id: delta.turnId,
+          turnId: delta.turnId,
+          status: "inProgress",
+          items: [],
+          diff: delta.diff,
+        }),
+      );
+    case "itemTextDelta":
+      return updateThreadTurnById(
+        threadWithSnapshot,
+        delta.turnId,
+        (turn) =>
+          updateTurnItemById(
+            turn,
+            delta.itemId,
+            (item) => {
+              switch (delta.itemType) {
+                case "agentMessage":
+                  return item.type === "agentMessage"
+                    ? { ...item, text: `${item.text}${delta.delta}` }
+                    : item;
+                case "plan":
+                  return item.type === "plan"
+                    ? { ...item, text: `${item.text}${delta.delta}` }
+                    : item;
+                case "commandExecution":
+                  return item.type === "commandExecution"
+                    ? {
+                        ...item,
+                        aggregatedOutput: `${item.aggregatedOutput ?? ""}${delta.delta}`,
+                      }
+                    : item;
+                case "reasoningText":
+                  return item.type === "reasoning"
+                    ? { ...item, text: `${item.text ?? ""}${delta.delta}` }
+                    : item;
+                case "reasoningSummaryText":
+                  if (item.type !== "reasoning") {
+                    return item;
+                  }
+                  return {
+                    ...item,
+                    summary: appendReasoningSummaryDelta(
+                      item.summary,
+                      delta.summaryIndex ?? 0,
+                      delta.delta,
+                    ),
+                  };
+              }
+            },
+            () =>
+              createDeltaPlaceholderItem(
+                delta.itemId,
+                delta.itemType,
+                delta.summaryIndex,
+              ),
+          ),
+        () => ({
+          id: delta.turnId,
+          turnId: delta.turnId,
+          status: "inProgress",
+          items: [
+            createDeltaPlaceholderItem(
+              delta.itemId,
+              delta.itemType,
+              delta.summaryIndex,
+            ),
+          ],
+        }),
+      );
+    case "reasoningSummaryPartAdded":
+      return updateThreadTurnById(
+        threadWithSnapshot,
+        delta.turnId,
+        (turn) =>
+          updateTurnItemById(
+            turn,
+            delta.itemId,
+            (item) =>
+              item.type === "reasoning"
+                ? {
+                    ...item,
+                    summary: ensureSummaryIndex(
+                      item.summary,
+                      delta.summaryIndex,
+                    ),
+                  }
+                : item,
+            () => ({
+              id: delta.itemId,
+              type: "reasoning",
+              summary: ensureSummaryIndex([], delta.summaryIndex),
+            }),
+          ),
+        () => ({
+          id: delta.turnId,
+          turnId: delta.turnId,
+          status: "inProgress",
+          items: [
+            {
+              id: delta.itemId,
+              type: "reasoning",
+              summary: ensureSummaryIndex([], delta.summaryIndex),
+            },
+          ],
+        }),
+      );
+    case "threadTitleUpdated":
+      return {
+        ...threadWithSnapshot,
+        title: delta.title,
+      };
+    case "tokenUsageUpdated":
+      return {
+        ...threadWithSnapshot,
+        latestTokenUsageInfo: delta.tokenUsage,
+      };
+  }
+}
+
+function ensureSummaryIndex(
+  summary: readonly string[] | undefined,
+  summaryIndex: number,
+): string[] {
+  const nextSummary = summary ? [...summary] : [];
+  while (nextSummary.length <= summaryIndex) {
+    nextSummary.push("");
+  }
+  return nextSummary;
+}
+
+function appendReasoningSummaryDelta(
+  summary: readonly string[] | undefined,
+  summaryIndex: number,
+  delta: string,
+): string[] {
+  const nextSummary = ensureSummaryIndex(summary, summaryIndex);
+  nextSummary[summaryIndex] = `${nextSummary[summaryIndex] ?? ""}${delta}`;
+  return nextSummary;
 }
 
 function basenameFromPath(value: string): string {
@@ -1965,7 +1934,7 @@ export function App(): React.JSX.Element {
     sidebarOrder,
     threads,
   ]);
-  const baseConversationState = useMemo(() => {
+  const conversationState = useMemo(() => {
     const liveConversationState = liveState?.conversationState ?? null;
     const readConversationState = readThreadState?.thread ?? null;
     if (!liveConversationState) {
@@ -1991,27 +1960,6 @@ export function App(): React.JSX.Element {
 
     return liveConversationState;
   }, [liveState?.conversationState, readThreadState?.thread]);
-  const streamedConversationState = useMemo(() => {
-    if (!selectedThreadId || streamEvents.length === 0) {
-      return null;
-    }
-
-    const broadcasts = parseThreadStreamBroadcasts(streamEvents);
-    if (broadcasts.length === 0) {
-      return null;
-    }
-
-    const reducedStates = reduceThreadStreamEvents(broadcasts);
-    return reducedStates.get(selectedThreadId)?.conversationState ?? null;
-  }, [selectedThreadId, streamEvents]);
-  const conversationState = useMemo(
-    () =>
-      mergeStreamConversationState(
-        baseConversationState,
-        streamedConversationState,
-      ),
-    [baseConversationState, streamedConversationState],
-  );
   const requestSourceState = useMemo(() => {
     const liveConversationState = liveState?.conversationState ?? null;
     const readConversationState = readThreadState?.thread ?? null;
@@ -2172,15 +2120,8 @@ export function App(): React.JSX.Element {
   );
   const showUsageBadges = activeThreadAgentId === "codex";
   const sessionTokenUsage = useMemo(() => {
-    const fromConversationState = parseTokenUsageInfo(
-      conversationState?.latestTokenUsageInfo,
-    );
-    if (fromConversationState) {
-      return fromConversationState;
-    }
-
-    return getLatestTokenUsageFromStreamEvents(streamEvents, selectedThreadId);
-  }, [conversationState?.latestTokenUsageInfo, selectedThreadId, streamEvents]);
+    return parseTokenUsageInfo(conversationState?.latestTokenUsageInfo);
+  }, [conversationState?.latestTokenUsageInfo]);
 
   const planModeOption = useMemo(
     () => modes.find((mode) => isPlanModeOption(mode)) ?? null,
@@ -2883,9 +2824,8 @@ export function App(): React.JSX.Element {
       }
       const shouldLoadStreamEvents =
         canReadStreamEvents &&
-        (activeTabRef.current === "debug" ||
-          (threadAgentId === "codex" && selectedThreadIdRef.current === threadId)) &&
-        (includeStreamEvents || threadAgentId === "codex");
+        activeTabRef.current === "debug" &&
+        includeStreamEvents;
       const shouldUpdateSelectedThread =
         selectedThreadIdRef.current === threadId;
       const existingCachedState =
@@ -2975,6 +2915,7 @@ export function App(): React.JSX.Element {
       const stream = await getStreamEvents(
         threadId,
         threadAgentId,
+        20,
         baseUrlOverride,
       );
       nextStreamEvents = stream.events;
@@ -3474,12 +3415,110 @@ export function App(): React.JSX.Element {
               agentCacheRef.current = null;
               providerCatalogCacheRef.current.clear();
               refreshCore = true;
-            } else if (parsedEvent.kind === "threadUpdated") {
-              refreshCore = true;
+            } else if (parsedEvent.kind === "threadDelta") {
               threadProviderByIdRef.current.set(
                 parsedEvent.threadId,
                 parsedEvent.provider,
               );
+              const cachedState =
+                threadViewStateCacheRef.current.get(parsedEvent.threadId) ??
+                null;
+              const currentThreadState =
+                cachedState?.liveState?.conversationState ??
+                cachedState?.readThreadState?.thread ??
+                (parsedEvent.threadId === selectedThreadIdRef.current
+                  ? (liveState?.conversationState ?? readThreadState?.thread ?? null)
+                  : null);
+
+              if (!currentThreadState) {
+                if (parsedEvent.threadId === selectedThreadIdRef.current) {
+                  refreshSelectedThread = true;
+                } else {
+                  refreshCore = true;
+                }
+              } else {
+                const nextThreadState = applyUnifiedThreadDelta(
+                  currentThreadState,
+                  parsedEvent,
+                );
+                const nextLiveState: LiveStateResponse = {
+                  ok: true,
+                  threadId: parsedEvent.threadId,
+                  ownerClientId: APP_SERVER_OWNER_CLIENT_ID,
+                  conversationState: nextThreadState,
+                  liveStateError: null,
+                };
+                const nextReadThreadState: ReadThreadResponse = {
+                  thread: nextThreadState,
+                };
+
+                threadViewStateCacheRef.current.set(parsedEvent.threadId, {
+                  liveState: nextLiveState,
+                  readThreadState: nextReadThreadState,
+                  streamEvents: cachedState?.streamEvents ?? [],
+                });
+
+                startTransition(() => {
+                  setThreads((previousThreads) => {
+                    const nextThreads = previousThreads.map((threadSummary) => {
+                      if (threadSummary.id !== parsedEvent.threadId) {
+                        return threadSummary;
+                      }
+
+                      return {
+                        ...threadSummary,
+                        updatedAt:
+                          nextThreadState.updatedAt ?? threadSummary.updatedAt,
+                        isGenerating: isThreadGeneratingState(nextThreadState),
+                        title: nextThreadState.title ?? null,
+                      };
+                    });
+                    const sortedThreads = sortThreadsByRecency(nextThreads);
+                    const nextSignature = buildThreadsSignature(sortedThreads);
+                    if (
+                      signaturesMatch(threadsSignatureRef.current, nextSignature)
+                    ) {
+                      return previousThreads;
+                    }
+                    threadsSignatureRef.current = nextSignature;
+                    return sortedThreads;
+                  });
+
+                  if (parsedEvent.threadId !== selectedThreadIdRef.current) {
+                    return;
+                  }
+
+                  setLiveState((previousState) =>
+                    buildLiveStateSyncSignature(previousState) ===
+                    buildLiveStateSyncSignature(nextLiveState)
+                      ? previousState
+                      : nextLiveState,
+                  );
+                  setReadThreadState((previousState) =>
+                    buildReadThreadSyncSignature(previousState) ===
+                    buildReadThreadSyncSignature(nextReadThreadState)
+                      ? previousState
+                      : nextReadThreadState,
+                  );
+                });
+              }
+            } else if (parsedEvent.kind === "threadUpdated") {
+              threadProviderByIdRef.current.set(
+                parsedEvent.threadId,
+                parsedEvent.provider,
+              );
+              const selectedThreadModeChanged =
+                parsedEvent.threadId === selectedThreadIdRef.current &&
+                modeSelectionSignatureFromConversationState(
+                  (
+                    threadViewStateCacheRef.current.get(parsedEvent.threadId)
+                      ?.liveState?.conversationState ??
+                    liveState?.conversationState ??
+                    readThreadState?.thread ??
+                    null
+                  ),
+                ) !==
+                  modeSelectionSignatureFromConversationState(parsedEvent.thread);
 
               startTransition(() => {
                 setThreads((previousThreads) => {
@@ -3530,7 +3569,7 @@ export function App(): React.JSX.Element {
               });
 
               if (parsedEvent.threadId === selectedThreadIdRef.current) {
-                refreshSelectedThread = true;
+                refreshSelectedThread = selectedThreadModeChanged;
                 startTransition(() => {
                   setLiveState((previousState) =>
                     buildLiveStateSyncSignature(previousState) ===

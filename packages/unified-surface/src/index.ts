@@ -1207,6 +1207,81 @@ const UnifiedEventThreadUpdatedSchema = z
   })
   .strict();
 
+const UnifiedThreadDeltaSnapshotSchema = z
+  .object({
+    updatedAt: NonNegativeIntSchema.optional(),
+    title: NullableStringSchema.optional(),
+    latestCollaborationMode: z
+      .union([UnifiedLatestCollaborationModeSchema, z.null()])
+      .optional(),
+    latestModel: NullableStringSchema.optional(),
+    latestReasoningEffort: NullableStringSchema.optional(),
+    latestTokenUsageInfo: z.union([JsonValueSchema, z.null()]).optional()
+  })
+  .strict();
+
+const UnifiedThreadDeltaEventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("turnUpdated"),
+      turn: UnifiedTurnSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("turnDiffUpdated"),
+      turnId: NonEmptyStringSchema,
+      diff: JsonValueSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("itemTextDelta"),
+      turnId: NonEmptyStringSchema,
+      itemId: NonEmptyStringSchema,
+      itemType: z.enum([
+        "agentMessage",
+        "plan",
+        "commandExecution",
+        "reasoningText",
+        "reasoningSummaryText"
+      ]),
+      summaryIndex: NonNegativeIntSchema.optional(),
+      delta: z.string()
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("reasoningSummaryPartAdded"),
+      turnId: NonEmptyStringSchema,
+      itemId: NonEmptyStringSchema,
+      summaryIndex: NonNegativeIntSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("threadTitleUpdated"),
+      title: NullableStringSchema
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("tokenUsageUpdated"),
+      tokenUsage: JsonValueSchema
+    })
+    .strict()
+]);
+
+const UnifiedEventThreadDeltaSchema = z
+  .object({
+    kind: z.literal("threadDelta"),
+    threadId: NonEmptyStringSchema,
+    provider: UnifiedProviderIdSchema,
+    delta: UnifiedThreadDeltaEventSchema,
+    snapshot: UnifiedThreadDeltaSnapshotSchema.optional()
+  })
+  .strict();
+
 const UnifiedEventUserInputRequestedSchema = z
   .object({
     kind: z.literal("userInputRequested"),
@@ -1235,6 +1310,7 @@ const UnifiedEventErrorSchema = z
 export const UnifiedEventSchema = z.discriminatedUnion("kind", [
   UnifiedEventProviderStateSchema,
   UnifiedEventThreadUpdatedSchema,
+  UnifiedEventThreadDeltaSchema,
   UnifiedEventUserInputRequestedSchema,
   UnifiedEventUserInputResolvedSchema,
   UnifiedEventErrorSchema
@@ -1246,6 +1322,7 @@ export type UnifiedEventKind = UnifiedEvent["kind"];
 export const UNIFIED_EVENT_KINDS = [
   "providerStateChanged",
   "threadUpdated",
+  "threadDelta",
   "userInputRequested",
   "userInputResolved",
   "error"
@@ -1326,6 +1403,7 @@ const FEATURE_ID_COVERAGE: Record<UnifiedFeatureId, true> = {
 const EVENT_KIND_COVERAGE: Record<UnifiedEventKind, true> = {
   providerStateChanged: true,
   threadUpdated: true,
+  threadDelta: true,
   userInputRequested: true,
   userInputResolved: true,
   error: true

@@ -4,11 +4,18 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import type { ClientEventEnvelope } from "@farfield/protocol";
+import type {
+  AppServerSupportedServerNotification,
+  ThreadConversationState,
+} from "@farfield/protocol";
 import {
+  JsonValueSchema,
   UnifiedCommandSchema,
   type UnifiedEvent,
+  type JsonValue,
   type UnifiedProviderId,
+  type UnifiedThread,
+  type UnifiedTurn,
 } from "@farfield/unified-surface";
 import {
   DirectoryCreateBodySchema,
@@ -328,6 +335,17 @@ for (const agentId of configuredAgentIds) {
         thread: mapThread("codex", event.thread),
       });
     });
+    codexAdapter.onRealtimeThreadDelta((event) => {
+      threadIndex.register(event.threadId, "codex");
+      const deltaEvent = buildCodexThreadDeltaEvent(
+        event.thread,
+        event.notification,
+      );
+      if (!deltaEvent) {
+        return;
+      }
+      broadcastUnifiedEvent(deltaEvent);
+    });
 
     adapters.push(codexAdapter);
     continue;
@@ -397,6 +415,232 @@ function buildUnifiedProviderStateEvents(): UnifiedEvent[] {
           : (runtimeLastError ?? null),
     };
   });
+}
+
+function jsonValueFromString(serialized: string): JsonValue {
+  return JsonValueSchema.parse(JSON.parse(serialized));
+}
+
+function getProtocolTurnId(
+  turn: ThreadConversationState["turns"][number],
+): string {
+  return turn.id ?? turn.turnId ?? "";
+}
+
+function buildThreadDeltaSnapshot(
+  thread: ThreadConversationState,
+): {
+  updatedAt?: number;
+  title?: string | null;
+  latestCollaborationMode?: UnifiedThread["latestCollaborationMode"];
+  latestModel?: string | null;
+  latestReasoningEffort?: string | null;
+  latestTokenUsageInfo?: JsonValue | null;
+} {
+  const mappedThread = mapThread("codex", { ...thread, turns: [], requests: [] });
+  return {
+    ...(mappedThread.updatedAt !== undefined
+      ? { updatedAt: mappedThread.updatedAt }
+      : {}),
+    ...(mappedThread.title !== undefined ? { title: mappedThread.title } : {}),
+    ...(mappedThread.latestCollaborationMode !== undefined
+      ? { latestCollaborationMode: mappedThread.latestCollaborationMode }
+      : {}),
+    ...(mappedThread.latestModel !== undefined
+      ? { latestModel: mappedThread.latestModel }
+      : {}),
+    ...(mappedThread.latestReasoningEffort !== undefined
+      ? { latestReasoningEffort: mappedThread.latestReasoningEffort }
+      : {}),
+    ...(mappedThread.latestTokenUsageInfo !== undefined
+      ? { latestTokenUsageInfo: mappedThread.latestTokenUsageInfo }
+      : {}),
+  };
+}
+
+function mapCodexTurnFromThread(
+  thread: ThreadConversationState,
+  turnId: string,
+): UnifiedTurn | null {
+  const protocolTurn = thread.turns.find((turn) => getProtocolTurnId(turn) === turnId);
+  if (!protocolTurn) {
+    return null;
+  }
+  const mappedThread = mapThread("codex", {
+    ...thread,
+    turns: [protocolTurn],
+    requests: [],
+  });
+  return mappedThread.turns[0] ?? null;
+}
+
+function buildCodexThreadDeltaEvent(
+  thread: ThreadConversationState,
+  notification: AppServerSupportedServerNotification,
+): UnifiedEvent | null {
+  const snapshot = buildThreadDeltaSnapshot(thread);
+
+  switch (notification.method) {
+    case "thread/started": {
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.thread.id,
+        provider: "codex",
+        delta: {
+          type: "threadTitleUpdated",
+          title: notification.params.thread.title ?? null,
+        },
+        snapshot,
+      };
+    }
+    case "thread/name/updated":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "threadTitleUpdated",
+          title: notification.params.threadName ?? null,
+        },
+        snapshot,
+      };
+    case "thread/tokenUsage/updated":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "tokenUsageUpdated",
+          tokenUsage: jsonValueFromString(
+            JSON.stringify(notification.params.tokenUsage),
+          ),
+        },
+        snapshot,
+      };
+    case "turn/started":
+    case "turn/completed":
+    case "turn/plan/updated":
+    case "item/started":
+    case "item/completed": {
+      const turnId =
+        "turn" in notification.params
+          ? getProtocolTurnId(notification.params.turn)
+          : notification.params.turnId;
+      const turn = mapCodexTurnFromThread(thread, turnId);
+      if (!turn) {
+        return null;
+      }
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "turnUpdated",
+          turn,
+        },
+        snapshot,
+      };
+    }
+    case "turn/diff/updated":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "turnDiffUpdated",
+          turnId: notification.params.turnId,
+          diff: notification.params.diff,
+        },
+        snapshot,
+      };
+    case "item/agentMessage/delta":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "itemTextDelta",
+          turnId: notification.params.turnId,
+          itemId: notification.params.itemId,
+          itemType: "agentMessage",
+          delta: notification.params.delta,
+        },
+        snapshot,
+      };
+    case "item/plan/delta":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "itemTextDelta",
+          turnId: notification.params.turnId,
+          itemId: notification.params.itemId,
+          itemType: "plan",
+          delta: notification.params.delta,
+        },
+        snapshot,
+      };
+    case "item/commandExecution/outputDelta":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "itemTextDelta",
+          turnId: notification.params.turnId,
+          itemId: notification.params.itemId,
+          itemType: "commandExecution",
+          delta: notification.params.delta,
+        },
+        snapshot,
+      };
+    case "item/fileChange/outputDelta":
+    case "item/mcpToolCall/progress":
+      return null;
+    case "item/reasoning/summaryPartAdded":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "reasoningSummaryPartAdded",
+          turnId: notification.params.turnId,
+          itemId: notification.params.itemId,
+          summaryIndex: notification.params.summaryIndex,
+        },
+        snapshot,
+      };
+    case "item/reasoning/summaryTextDelta":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "itemTextDelta",
+          turnId: notification.params.turnId,
+          itemId: notification.params.itemId,
+          itemType: "reasoningSummaryText",
+          summaryIndex: notification.params.summaryIndex,
+          delta: notification.params.delta,
+        },
+        snapshot,
+      };
+    case "item/reasoning/textDelta":
+      return {
+        kind: "threadDelta",
+        threadId: notification.params.threadId,
+        provider: "codex",
+        delta: {
+          type: "itemTextDelta",
+          turnId: notification.params.turnId,
+          itemId: notification.params.itemId,
+          itemType: "reasoningText",
+          delta: notification.params.delta,
+        },
+        snapshot,
+      };
+  }
 }
 
 function broadcastUnifiedEvent(event: UnifiedEvent): void {

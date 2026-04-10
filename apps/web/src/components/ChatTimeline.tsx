@@ -42,6 +42,10 @@ export const ChatTimeline = memo(function ChatTimeline({
   scrollRef,
   chatContentRef,
 }: ChatTimelineProps): React.JSX.Element {
+  const shouldAnimateTimeline = !visibleConversationItems.some(
+    (entry) => entry.turnIsInProgress,
+  );
+
   return (
     <>
       <div
@@ -72,48 +76,86 @@ export const ChatTimeline = memo(function ChatTimeline({
                     : "Select a thread from the sidebar"}
               </div>
             ) : (
-              <motion.div
-                ref={chatContentRef}
-                className="space-y-0"
-                layout="position"
-                style={{ overflowAnchor: "none" }}
-              >
-                {hasHiddenChatItems && (
-                  <div className="flex justify-center pb-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full"
-                      onClick={onShowOlder}
+              (() => {
+                const content = (
+                  <>
+                    {hasHiddenChatItems && (
+                      <div className="flex justify-center pb-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full"
+                          onClick={onShowOlder}
+                        >
+                          Show older messages
+                        </Button>
+                      </div>
+                    )}
+                    {visibleConversationItems.map((entry) =>
+                      shouldAnimateTimeline ? (
+                        <motion.div
+                          key={entry.key}
+                          layout="position"
+                          initial={{ opacity: 0, y: 14 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.22,
+                            ease: [0.22, 1, 0.36, 1],
+                          }}
+                          style={{ paddingTop: `${entry.spacingTop}px` }}
+                        >
+                          <ConversationItem
+                            item={entry.item}
+                            isLast={entry.isLast}
+                            turnIsInProgress={entry.turnIsInProgress}
+                            onSelectThread={onSelectThread}
+                            previousItemType={entry.previousItemType}
+                            nextItemType={entry.nextItemType}
+                          />
+                        </motion.div>
+                      ) : (
+                        <div
+                          key={entry.key}
+                          style={{ paddingTop: `${entry.spacingTop}px` }}
+                        >
+                          <ConversationItem
+                            item={entry.item}
+                            isLast={entry.isLast}
+                            turnIsInProgress={entry.turnIsInProgress}
+                            onSelectThread={onSelectThread}
+                            previousItemType={entry.previousItemType}
+                            nextItemType={entry.nextItemType}
+                          />
+                        </div>
+                      ),
+                    )}
+                  </>
+                );
+
+                if (!shouldAnimateTimeline) {
+                  return (
+                    <div
+                      ref={chatContentRef}
+                      className="space-y-0"
+                      style={{ overflowAnchor: "none" }}
                     >
-                      Show older messages
-                    </Button>
-                  </div>
-                )}
-                {visibleConversationItems.map((entry) => (
+                      {content}
+                    </div>
+                  );
+                }
+
+                return (
                   <motion.div
-                    key={entry.key}
+                    ref={chatContentRef}
+                    className="space-y-0"
                     layout="position"
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.22,
-                      ease: [0.22, 1, 0.36, 1],
-                    }}
-                    style={{ paddingTop: `${entry.spacingTop}px` }}
+                    style={{ overflowAnchor: "none" }}
                   >
-                    <ConversationItem
-                      item={entry.item}
-                      isLast={entry.isLast}
-                      turnIsInProgress={entry.turnIsInProgress}
-                      onSelectThread={onSelectThread}
-                      previousItemType={entry.previousItemType}
-                      nextItemType={entry.nextItemType}
-                    />
+                    {content}
                   </motion.div>
-                ))}
-              </motion.div>
+                );
+              })()
             )}
           </motion.div>
         </AnimatePresence>

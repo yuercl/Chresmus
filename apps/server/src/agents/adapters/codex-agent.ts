@@ -63,6 +63,12 @@ export interface CodexThreadRealtimeEvent {
   thread: ThreadConversationState;
 }
 
+export interface CodexThreadRealtimeDeltaEvent {
+  threadId: string;
+  notification: AppServerSupportedServerNotification;
+  thread: ThreadConversationState;
+}
+
 export interface CodexAgentOptions {
   appExecutable: string;
   workspaceDir: string;
@@ -113,6 +119,9 @@ export class CodexAgentAdapter implements AgentAdapter {
   private readonly appEventListeners = new Set<(event: CodexAppEvent) => void>();
   private readonly realtimeThreadListeners = new Set<
     (event: CodexThreadRealtimeEvent) => void
+  >();
+  private readonly realtimeThreadDeltaListeners = new Set<
+    (event: CodexThreadRealtimeDeltaEvent) => void
   >();
 
   private runtimeState: CodexAgentRuntimeState = {
@@ -167,6 +176,15 @@ export class CodexAgentAdapter implements AgentAdapter {
     this.realtimeThreadListeners.add(listener);
     return () => {
       this.realtimeThreadListeners.delete(listener);
+    };
+  }
+
+  public onRealtimeThreadDelta(
+    listener: (event: CodexThreadRealtimeDeltaEvent) => void
+  ): () => void {
+    this.realtimeThreadDeltaListeners.add(listener);
+    return () => {
+      this.realtimeThreadDeltaListeners.delete(listener);
     };
   }
 
@@ -538,6 +556,7 @@ export class CodexAgentAdapter implements AgentAdapter {
         ...currentSnapshot,
         requests: updatedRequests
       });
+      this.emitRealtimeThreadUpdate(input.threadId, this.getThreadState(input.threadId));
     }
 
     return {
@@ -583,6 +602,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     const current = this.getThreadState(threadId);
     const next = upsertThreadRequest(current, request);
     this.storeSnapshot(threadId, next);
+    this.emitRealtimeThreadUpdate(threadId, next);
   }
 
   private handleSupportedServerNotification(
@@ -601,6 +621,7 @@ export class CodexAgentAdapter implements AgentAdapter {
         const thread = parseThreadConversationState(notification.params.thread);
         this.threadOwnerById.set(thread.id, APP_SERVER_OWNER_CLIENT_ID);
         this.storeSnapshot(thread.id, thread);
+        this.emitRealtimeThreadDelta(thread.id, notification, thread);
         return;
       }
 
@@ -610,6 +631,11 @@ export class CodexAgentAdapter implements AgentAdapter {
           ...current,
           title: notification.params.threadName ?? null
         });
+        this.emitRealtimeThreadDelta(
+          notification.params.threadId,
+          notification,
+          this.getThreadState(notification.params.threadId)
+        );
         return;
       }
 
@@ -619,6 +645,11 @@ export class CodexAgentAdapter implements AgentAdapter {
           ...current,
           latestTokenUsageInfo: notification.params.tokenUsage
         });
+        this.emitRealtimeThreadDelta(
+          notification.params.threadId,
+          notification,
+          this.getThreadState(notification.params.threadId)
+        );
         return;
       }
 
@@ -627,6 +658,7 @@ export class CodexAgentAdapter implements AgentAdapter {
         const current = this.getThreadState(notification.params.threadId);
         const next = upsertTurn(current, notification.params.turn);
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -648,6 +680,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -677,6 +710,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -695,6 +729,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -706,6 +741,11 @@ export class CodexAgentAdapter implements AgentAdapter {
           "agentMessage",
           notification.params.delta
         );
+        this.emitRealtimeThreadDelta(
+          notification.params.threadId,
+          notification,
+          this.getThreadState(notification.params.threadId)
+        );
         return;
       }
 
@@ -716,6 +756,11 @@ export class CodexAgentAdapter implements AgentAdapter {
           notification.params.itemId,
           "plan",
           notification.params.delta
+        );
+        this.emitRealtimeThreadDelta(
+          notification.params.threadId,
+          notification,
+          this.getThreadState(notification.params.threadId)
         );
         return;
       }
@@ -741,6 +786,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -767,6 +813,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -790,6 +837,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -812,6 +860,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           })
         );
         this.storeSnapshot(notification.params.threadId, next);
+        this.emitRealtimeThreadDelta(notification.params.threadId, notification, next);
         return;
       }
 
@@ -857,6 +906,20 @@ export class CodexAgentAdapter implements AgentAdapter {
     for (const listener of this.realtimeThreadListeners) {
       listener({
         threadId,
+        thread
+      });
+    }
+  }
+
+  private emitRealtimeThreadDelta(
+    threadId: string,
+    notification: AppServerSupportedServerNotification,
+    thread: ThreadConversationState
+  ): void {
+    for (const listener of this.realtimeThreadDeltaListeners) {
+      listener({
+        threadId,
+        notification,
         thread
       });
     }
@@ -1064,7 +1127,6 @@ export class CodexAgentAdapter implements AgentAdapter {
       threadId,
       thread
     );
-    this.emitRealtimeThreadUpdate(threadId, thread);
   }
 
   private resolveThreadTitle(
