@@ -1047,7 +1047,8 @@ const UnifiedCommandResultCreateThreadSchema = z
   .object({
     kind: z.literal("createThread"),
     threadId: NonEmptyStringSchema,
-    thread: UnifiedThreadSchema
+    thread: UnifiedThreadSchema,
+    model: NullableStringSchema.optional()
   })
   .strict();
 
