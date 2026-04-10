@@ -1685,6 +1685,7 @@ export function App(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const isChatAtBottomRef = useRef(true);
+  const shouldAutoFollowChatRef = useRef(true);
   const lastAppliedModeSignatureRef = useRef("");
   const hasHydratedAgentSelectionRef = useRef(false);
   const threadProviderByIdRef = useRef<Map<string, AgentId>>(new Map());
@@ -3813,7 +3814,7 @@ export function App(): React.JSX.Element {
     isChatAtBottomRef.current = isChatAtBottom;
   }, [isChatAtBottom]);
 
-  // Track whether chat view is at the bottom.
+  // Track whether chat view is at the bottom and whether the user still wants auto-follow.
   useEffect(() => {
     if (activeTab !== "chat" || !scrollRef.current) {
       return;
@@ -3826,6 +3827,7 @@ export function App(): React.JSX.Element {
       const distanceFromBottom =
         scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
       const nextIsBottom = distanceFromBottom <= 48;
+      shouldAutoFollowChatRef.current = nextIsBottom;
       if (nextIsBottom !== isChatAtBottomRef.current) {
         isChatAtBottomRef.current = nextIsBottom;
         setIsChatAtBottom(nextIsBottom);
@@ -3850,13 +3852,19 @@ export function App(): React.JSX.Element {
     };
   }, [activeTab, selectedThreadId]);
 
-  // Keep chat pinned to bottom only if user is already at the bottom.
+  // Keep chat pinned to bottom while auto-follow remains active.
   useLayoutEffect(() => {
-    if (activeTab !== "chat" || !isChatAtBottomRef.current) {
+    if (activeTab !== "chat" || !shouldAutoFollowChatRef.current) {
       return;
     }
     scrollChatToBottom();
-  }, [activeTab, visibleConversationItemCount, scrollChatToBottom]);
+  }, [
+    activeTab,
+    conversationContentSignature(conversationState),
+    scrollChatToBottom,
+    selectedThreadId,
+    visibleConversationItemCount,
+  ]);
 
   // Keep bottom pinned when expanded/collapsed blocks change chat height.
   useEffect(() => {
@@ -3867,7 +3875,7 @@ export function App(): React.JSX.Element {
     let rafId: number | null = null;
 
     const observer = new ResizeObserver(() => {
-      if (!isChatAtBottomRef.current) {
+      if (!shouldAutoFollowChatRef.current) {
         return;
       }
       if (rafId !== null) {
@@ -3892,6 +3900,7 @@ export function App(): React.JSX.Element {
     if (activeTab !== "chat" || !scrollRef.current) return;
     scrollChatToBottom();
     isChatAtBottomRef.current = true;
+    shouldAutoFollowChatRef.current = true;
     setIsChatAtBottom(true);
     setVisibleChatItemLimit(INITIAL_VISIBLE_CHAT_ITEMS);
   }, [activeTab, scrollChatToBottom, selectedThreadId]);
@@ -5411,6 +5420,9 @@ export function App(): React.JSX.Element {
                   isChatAtBottom={isChatAtBottom}
                   onSelectThread={handleSelectReferencedThread}
                   onShowOlder={() => {
+                    shouldAutoFollowChatRef.current = false;
+                    isChatAtBottomRef.current = false;
+                    setIsChatAtBottom(false);
                     setVisibleChatItemLimit(
                       (limit) => limit + VISIBLE_CHAT_ITEMS_STEP,
                     );
@@ -5418,6 +5430,7 @@ export function App(): React.JSX.Element {
                   onScrollToBottom={() => {
                     scrollChatToBottom();
                     isChatAtBottomRef.current = true;
+                    shouldAutoFollowChatRef.current = true;
                     setIsChatAtBottom(true);
                   }}
                   scrollRef={scrollRef}
