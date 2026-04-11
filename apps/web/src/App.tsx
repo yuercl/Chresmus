@@ -161,6 +161,7 @@ type ConversationTurn = NonNullable<
 type ConversationTurnItem = NonNullable<ConversationTurn["items"]>[number];
 type FlatConversationItem = ChatTimelineEntry;
 type UnifiedThreadDeltaEvent = Extract<UnifiedEvent, { kind: "threadDelta" }>;
+const AppTabSchema = z.enum(["chat", "workspace", "debug"]);
 
 interface RefreshFlags {
   refreshCore: boolean;
@@ -214,7 +215,7 @@ interface ProviderCatalogCacheEntry {
   baseUrl: string;
 }
 
-type AppTab = "chat" | "workspace" | "debug";
+type AppTab = z.infer<typeof AppTabSchema>;
 
 interface AppViewSnapshot {
   threads: Thread[];
@@ -2626,6 +2627,49 @@ export function App(): React.JSX.Element {
     workspaceEntriesState?.path,
   ]);
   const commitLabel = health?.state.gitCommit ?? "unknown";
+  const topNavOptions: Array<{ value: AppTab; label: string }> = [
+    { value: "chat", label: "Chat" },
+    ...(selectedThreadId
+      ? [{ value: "workspace" as const, label: "Workspace" }]
+      : []),
+    ...(DEBUG_UI_ENABLED ? [{ value: "debug" as const, label: "Debug" }] : []),
+  ];
+  const topNavTabs =
+    selectedThreadId || DEBUG_UI_ENABLED ? (
+      <>
+        <Button
+          type="button"
+          variant={activeTab === "chat" ? "secondary" : "ghost"}
+          size="sm"
+          className="rounded-full"
+          onClick={() => setActiveTab("chat")}
+        >
+          Chat
+        </Button>
+        {selectedThreadId && (
+          <Button
+            type="button"
+            variant={activeTab === "workspace" ? "secondary" : "ghost"}
+            size="sm"
+            className="rounded-full"
+            onClick={() => setActiveTab("workspace")}
+          >
+            Workspace
+          </Button>
+        )}
+        {DEBUG_UI_ENABLED && (
+          <Button
+            type="button"
+            variant={activeTab === "debug" ? "secondary" : "ghost"}
+            size="sm"
+            className="rounded-full"
+            onClick={() => setActiveTab("debug")}
+          >
+            Debug
+          </Button>
+        )}
+      </>
+    ) : null;
   const scrollChatToBottom = useCallback(() => {
     const scroller = scrollRef.current;
     if (!scroller) {
@@ -5782,6 +5826,25 @@ export function App(): React.JSX.Element {
             </div>
 
             <div className="flex items-center gap-0.5 shrink-0">
+              {topNavTabs && (
+                <div className="md:hidden mr-1">
+                  <Select
+                    value={activeTab}
+                    onValueChange={(value) => setActiveTab(AppTabSchema.parse(value))}
+                  >
+                    <SelectTrigger className="h-8 w-[118px] rounded-full border-border/70 bg-muted/40 px-3 text-xs shadow-none focus-visible:ring-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      {topNavOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {showUsageBadges && rateLimits && (() => {
                 const windows: Array<{
                   label: string;
@@ -5998,40 +6061,12 @@ export function App(): React.JSX.Element {
               )}
             </AnimatePresence>
 
-            {(selectedThreadId || DEBUG_UI_ENABLED) && (
-              <div className="shrink-0 border-b border-border px-3 py-2">
-                <div className="-my-1 flex items-center gap-1 overflow-x-auto py-1">
-                  <Button
-                    type="button"
-                    variant={activeTab === "chat" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="rounded-full"
-                    onClick={() => setActiveTab("chat")}
-                  >
-                    Chat
-                  </Button>
-                  {selectedThreadId && (
-                    <Button
-                      type="button"
-                      variant={activeTab === "workspace" ? "secondary" : "ghost"}
-                      size="sm"
-                      className="rounded-full"
-                      onClick={() => setActiveTab("workspace")}
-                    >
-                      Workspace
-                    </Button>
-                  )}
-                  {DEBUG_UI_ENABLED && (
-                    <Button
-                      type="button"
-                      variant={activeTab === "debug" ? "secondary" : "ghost"}
-                      size="sm"
-                      className="rounded-full"
-                      onClick={() => setActiveTab("debug")}
-                    >
-                      Debug
-                    </Button>
-                  )}
+            {topNavTabs && (
+              <div className="hidden md:block shrink-0 border-b border-border px-3 py-2">
+                <div className="overflow-visible py-1">
+                  <div className="overflow-x-auto">
+                    <div className="flex w-max items-center gap-1 px-1">{topNavTabs}</div>
+                  </div>
                 </div>
               </div>
             )}
