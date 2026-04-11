@@ -31,6 +31,31 @@ export const DirectoryReadQuerySchema = z
   })
   .strict();
 
+export const FilesystemEntriesReadQuerySchema = z
+  .object({
+    path: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+export const FileReadQuerySchema = z
+  .object({
+    path: z.string().trim().min(1),
+  })
+  .strict();
+
+export const WorkspaceGitStatusQuerySchema = z
+  .object({
+    cwd: z.string().trim().min(1),
+  })
+  .strict();
+
+export const WorkspaceGitDiffQuerySchema = z
+  .object({
+    cwd: z.string().trim().min(1),
+    path: z.string().trim().min(1),
+  })
+  .strict();
+
 export function parseBody<Schema extends z.ZodTypeAny>(
   schema: Schema,
   value: unknown,

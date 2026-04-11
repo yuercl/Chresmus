@@ -3,7 +3,7 @@ import type { Socket } from "node:net";
 import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import type {
   AppServerSupportedServerNotification,
   ThreadConversationState,
@@ -20,6 +20,10 @@ import {
 import {
   DirectoryCreateBodySchema,
   DirectoryReadQuerySchema,
+  FileReadQuerySchema,
+  FilesystemEntriesReadQuerySchema,
+  WorkspaceGitDiffQuerySchema,
+  WorkspaceGitStatusQuerySchema,
   parseBody,
   parseQuery,
   TraceMarkBodySchema,
@@ -791,6 +795,485 @@ function printStartupBanner(): void {
   process.stdout.write(lines.join("\n"));
 }
 
+const FILE_READ_MAX_BYTES = 256 * 1024;
+const GIT_DIFF_MAX_BYTES = 512 * 1024;
+
+const TEXT_DIFF_EXTENSIONS = new Set([
+  "c",
+  "cc",
+  "cjs",
+  "cpp",
+  "cs",
+  "css",
+  "go",
+  "h",
+  "hpp",
+  "htm",
+  "html",
+  "java",
+  "js",
+  "json",
+  "jsx",
+  "kt",
+  "md",
+  "mjs",
+  "py",
+  "rb",
+  "rs",
+  "scss",
+  "sh",
+  "sql",
+  "svg",
+  "swift",
+  "toml",
+  "ts",
+  "tsx",
+  "txt",
+  "xml",
+  "yaml",
+  "yml",
+  "zsh",
+]);
+
+const IMAGE_CONTENT_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
+  avif: "image/avif",
+  gif: "image/gif",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  png: "image/png",
+  svg: "image/svg+xml",
+  webp: "image/webp",
+};
+
+type WorkspaceGitFileStatusKind =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "unmerged"
+  | "untracked"
+  | "typeChanged";
+
+function resolveWorkspacePath(inputPath: string): string {
+  return path.isAbsolute(inputPath)
+    ? path.normalize(inputPath)
+    : path.resolve(DEFAULT_WORKSPACE, inputPath);
+}
+
+function ensurePathInsideRoot(rootPath: string, candidatePath: string): void {
+  const relative = path.relative(rootPath, candidatePath);
+  if (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  ) {
+    return;
+  }
+  throw new Error(`Path ${candidatePath} is outside workspace root ${rootPath}`);
+}
+
+function detectBinaryContent(buffer: Buffer): boolean {
+  for (const byte of buffer) {
+    if (byte === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function fileExtensionFromPath(pathValue: string): string {
+  const extension = path.extname(pathValue).toLowerCase();
+  return extension.startsWith(".") ? extension.slice(1) : extension;
+}
+
+function isImagePath(pathValue: string): boolean {
+  const extension = fileExtensionFromPath(pathValue);
+  return Object.hasOwn(IMAGE_CONTENT_TYPE_BY_EXTENSION, extension);
+}
+
+function isTextDiffPath(pathValue: string): boolean {
+  const fileName = path.basename(pathValue).toLowerCase();
+  if (fileName === "dockerfile") {
+    return true;
+  }
+  const extension = fileExtensionFromPath(pathValue);
+  return TEXT_DIFF_EXTENSIONS.has(extension);
+}
+
+function contentTypeForPath(pathValue: string): string {
+  const extension = fileExtensionFromPath(pathValue);
+  return IMAGE_CONTENT_TYPE_BY_EXTENSION[extension] ?? "application/octet-stream";
+}
+
+function readWorkspaceFile(pathValue: string):
+  | {
+      status: "available";
+      path: string;
+      content: string;
+      truncated: boolean;
+      isBinary: boolean;
+    }
+  | {
+      status: "missing";
+      path: string;
+    } {
+  const resolvedPath = resolveWorkspacePath(pathValue);
+  if (!fs.existsSync(resolvedPath)) {
+    return {
+      status: "missing",
+      path: resolvedPath,
+    };
+  }
+  const stats = fs.statSync(resolvedPath);
+  if (!stats.isFile()) {
+    throw new Error(`Requested path is not a file: ${resolvedPath}`);
+  }
+
+  const raw = fs.readFileSync(resolvedPath);
+  const isBinary = detectBinaryContent(raw);
+  const limited = raw.subarray(0, FILE_READ_MAX_BYTES);
+
+  return {
+    status: "available",
+    path: resolvedPath,
+    content: isBinary ? "" : limited.toString("utf8"),
+    truncated: raw.length > FILE_READ_MAX_BYTES,
+    isBinary,
+  };
+}
+
+function readWorkspaceRawFile(pathValue: string): {
+  path: string;
+  contentType: string;
+  data: Buffer;
+} {
+  const resolvedPath = resolveWorkspacePath(pathValue);
+  const stats = fs.statSync(resolvedPath);
+  if (!stats.isFile()) {
+    throw new Error(`Requested path is not a file: ${resolvedPath}`);
+  }
+
+  return {
+    path: resolvedPath,
+    contentType: contentTypeForPath(resolvedPath),
+    data: fs.readFileSync(resolvedPath),
+  };
+}
+
+function listFilesystemEntries(pathValue: string | undefined): {
+  path: string;
+  parentPath: string | null;
+  entries: Array<{
+    name: string;
+    path: string;
+    kind: "directory" | "file";
+  }>;
+} {
+  const requestedPath =
+    typeof pathValue === "string" && pathValue.length > 0
+      ? pathValue
+      : DEFAULT_WORKSPACE;
+  const resolvedPath = resolveWorkspacePath(requestedPath);
+  const stats = fs.statSync(resolvedPath);
+  if (!stats.isDirectory()) {
+    throw new Error(`Requested path is not a directory: ${resolvedPath}`);
+  }
+
+  const entries = fs
+    .readdirSync(resolvedPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() || entry.isFile())
+    .map((entry) => ({
+      name: entry.name,
+      path: path.join(resolvedPath, entry.name),
+      kind: entry.isDirectory() ? ("directory" as const) : ("file" as const),
+    }))
+    .sort((left, right) => {
+      if (left.kind !== right.kind) {
+        return left.kind === "directory" ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
+
+  const parentPath = path.dirname(resolvedPath);
+  return {
+    path: resolvedPath,
+    parentPath: parentPath === resolvedPath ? null : parentPath,
+    entries,
+  };
+}
+
+function runGitTextCommand(cwdPath: string, args: string[]): string {
+  const resolvedCwd = resolveWorkspacePath(cwdPath);
+  const stats = fs.statSync(resolvedCwd);
+  if (!stats.isDirectory()) {
+    throw new Error(`Requested cwd is not a directory: ${resolvedCwd}`);
+  }
+
+  return execFileSync("git", args, {
+    cwd: resolvedCwd,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  }).trimEnd();
+}
+
+function runGitTextCommandAllowStatusOne(cwdPath: string, args: string[]): string {
+  const resolvedCwd = resolveWorkspacePath(cwdPath);
+  const stats = fs.statSync(resolvedCwd);
+  if (!stats.isDirectory()) {
+    throw new Error(`Requested cwd is not a directory: ${resolvedCwd}`);
+  }
+
+  const result = spawnSync("git", args, {
+    cwd: resolvedCwd,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  const status = result.status ?? 0;
+  if (status !== 0 && status !== 1) {
+    const stderr = result.stderr.trim();
+    throw new Error(stderr.length > 0 ? stderr : `git exited with status ${String(status)}`);
+  }
+
+  return result.stdout.trimEnd();
+}
+
+function parseGitStatusKind(code: string): WorkspaceGitFileStatusKind | null {
+  switch (code) {
+    case "A":
+      return "added";
+    case "M":
+      return "modified";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    case "U":
+      return "unmerged";
+    case "T":
+      return "typeChanged";
+    case "?":
+      return "untracked";
+    case " ":
+      return null;
+    default:
+      return null;
+  }
+}
+
+function parseGitBranchName(statusHeaderLine: string | undefined): string | null {
+  if (!statusHeaderLine || !statusHeaderLine.startsWith("## ")) {
+    return null;
+  }
+
+  const branchInfo = statusHeaderLine.slice(3);
+  if (branchInfo.startsWith("No commits yet on ")) {
+    return branchInfo.slice("No commits yet on ".length);
+  }
+
+  const branchName = branchInfo.split("...")[0] ?? branchInfo;
+  return branchName.length > 0 ? branchName : null;
+}
+
+function readWorkspaceGitStatus(cwdPath: string): {
+  cwd: string;
+  branch: string | null;
+  hasUncommittedChanges: boolean;
+  files: Array<{
+    path: string;
+    previousPath?: string;
+    stagedStatus: WorkspaceGitFileStatusKind | null;
+    unstagedStatus: WorkspaceGitFileStatusKind | null;
+  }>;
+} {
+  const resolvedCwd = resolveWorkspacePath(cwdPath);
+  const raw = runGitTextCommand(resolvedCwd, [
+    "status",
+    "--porcelain=v1",
+    "--branch",
+    "--untracked-files=all",
+  ]);
+  const lines = raw.length > 0 ? raw.split("\n") : [];
+  const branch = parseGitBranchName(lines[0]);
+  const files: Array<{
+    path: string;
+    previousPath?: string;
+    stagedStatus: WorkspaceGitFileStatusKind | null;
+    unstagedStatus: WorkspaceGitFileStatusKind | null;
+  }> = [];
+
+  for (const line of lines.slice(branch ? 1 : 0)) {
+    if (line.length < 3) {
+      continue;
+    }
+
+    const stagedCode = line[0] ?? " ";
+    const unstagedCode = line[1] ?? " ";
+    const rawPath = line.slice(3);
+    const renamedParts = rawPath.split(" -> ");
+    const nextPath = renamedParts[renamedParts.length - 1] ?? rawPath;
+    const resolvedPath = path.resolve(resolvedCwd, nextPath);
+    ensurePathInsideRoot(resolvedCwd, resolvedPath);
+
+    const entry = {
+      path: resolvedPath,
+      stagedStatus: parseGitStatusKind(stagedCode),
+      unstagedStatus: parseGitStatusKind(unstagedCode),
+    };
+
+    const previousPathSegment =
+      renamedParts.length > 1 ? (renamedParts[0] ?? null) : null;
+    if (previousPathSegment !== null) {
+      const previousPath = path.resolve(resolvedCwd, previousPathSegment);
+      ensurePathInsideRoot(resolvedCwd, previousPath);
+      files.push({
+        ...entry,
+        previousPath,
+      });
+      continue;
+    }
+
+    files.push(entry);
+  }
+
+  return {
+    cwd: resolvedCwd,
+    branch,
+    hasUncommittedChanges: files.length > 0,
+    files,
+  };
+}
+
+function readWorkspaceGitStatusEntry(
+  cwdPath: string,
+  filePath: string,
+): {
+  path: string;
+  previousPath?: string;
+  stagedStatus: WorkspaceGitFileStatusKind | null;
+  unstagedStatus: WorkspaceGitFileStatusKind | null;
+} | null {
+  const resolvedFilePath = resolveWorkspacePath(filePath);
+  const status = readWorkspaceGitStatus(cwdPath);
+  return status.files.find((entry) => entry.path === resolvedFilePath) ?? null;
+}
+
+function buildUnifiedAddedDiff(cwdPath: string, filePath: string): string {
+  const file = readWorkspaceFile(filePath);
+  if (file.status !== "available" || file.isBinary || !isTextDiffPath(file.path)) {
+    return "";
+  }
+  return runGitTextCommandAllowStatusOne(cwdPath, [
+    "diff",
+    "--no-index",
+    "--no-ext-diff",
+    "--",
+    "/dev/null",
+    file.path,
+  ]);
+}
+
+function buildTextDiffCandidateCommands(relativePath: string): string[][] {
+  return [
+    [
+      "diff",
+      "--no-ext-diff",
+      "HEAD",
+      "--",
+      relativePath,
+    ],
+    [
+      "diff",
+      "--no-ext-diff",
+      "--cached",
+      "--",
+      relativePath,
+    ],
+    [
+      "diff",
+      "--no-ext-diff",
+      "--",
+      relativePath,
+    ],
+  ];
+}
+
+function firstSuccessfulGitDiff(cwdPath: string, commands: readonly string[][]): string {
+  for (const command of commands) {
+    try {
+      const diff = runGitTextCommandAllowStatusOne(cwdPath, command);
+      if (diff.length > 0) {
+        return diff;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return "";
+}
+
+function readWorkspaceGitDiff(cwdPath: string, filePath: string): {
+  cwd: string;
+  path: string;
+  diff: string;
+  truncated: boolean;
+} {
+  const resolvedCwd = resolveWorkspacePath(cwdPath);
+  const resolvedFilePath = resolveWorkspacePath(filePath);
+  ensurePathInsideRoot(resolvedCwd, resolvedFilePath);
+  const statusEntry = readWorkspaceGitStatusEntry(resolvedCwd, resolvedFilePath);
+  const supportsTextDiff = isTextDiffPath(resolvedFilePath);
+  let rawDiff = "";
+
+  if (supportsTextDiff && statusEntry) {
+    const isAddedLike =
+      statusEntry.unstagedStatus === "untracked" ||
+      statusEntry.unstagedStatus === "added" ||
+      statusEntry.stagedStatus === "added";
+    if (isAddedLike && fs.existsSync(resolvedFilePath)) {
+      rawDiff = buildUnifiedAddedDiff(resolvedCwd, resolvedFilePath);
+    } else {
+      const relativePath = path.relative(resolvedCwd, resolvedFilePath);
+      rawDiff = firstSuccessfulGitDiff(
+        resolvedCwd,
+        buildTextDiffCandidateCommands(relativePath),
+      );
+    }
+  }
+
+  if (!supportsTextDiff || rawDiff.length === 0) {
+    const relativePath = path.relative(resolvedCwd, resolvedFilePath);
+    rawDiff =
+      rawDiff ||
+      runGitTextCommandAllowStatusOne(resolvedCwd, [
+        "diff",
+        "--no-ext-diff",
+        "HEAD",
+        "--",
+        relativePath,
+      ]);
+  }
+  const truncated = Buffer.byteLength(rawDiff, "utf8") > GIT_DIFF_MAX_BYTES;
+  const diff = truncated
+    ? Buffer.from(rawDiff, "utf8")
+        .subarray(0, GIT_DIFF_MAX_BYTES)
+        .toString("utf8")
+    : rawDiff;
+
+  return {
+    cwd: resolvedCwd,
+    path: resolvedFilePath,
+    diff,
+    truncated,
+  };
+}
+
 function parseUnifiedProviderId(
   value: string | null,
 ): UnifiedProviderId | null {
@@ -915,6 +1398,85 @@ const server = http.createServer(async (req, res) => {
         path: resolvedPath,
         parentPath: parentPath === resolvedPath ? null : parentPath,
         entries,
+      });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/filesystem/entries") {
+      const query = parseQuery(FilesystemEntriesReadQuerySchema, {
+        path: url.searchParams.get("path") ?? undefined,
+      });
+      const result = listFilesystemEntries(query.path);
+      jsonResponse(res, 200, {
+        ok: true,
+        path: result.path,
+        parentPath: result.parentPath,
+        entries: result.entries,
+      });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/filesystem/file") {
+      const query = parseQuery(FileReadQuerySchema, {
+        path: url.searchParams.get("path") ?? undefined,
+      });
+      const result = readWorkspaceFile(query.path);
+      jsonResponse(res, 200, {
+        ok: true,
+        status: result.status,
+        path: result.path,
+        ...(result.status === "available"
+          ? {
+              content: result.content,
+              truncated: result.truncated,
+              isBinary: result.isBinary,
+            }
+          : {}),
+      });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/filesystem/file/raw") {
+      const query = parseQuery(FileReadQuerySchema, {
+        path: url.searchParams.get("path") ?? undefined,
+      });
+      const result = readWorkspaceRawFile(query.path);
+      res.writeHead(200, {
+        "Content-Type": result.contentType,
+        "Content-Length": result.data.length,
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.end(result.data);
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/workspace/git/status") {
+      const query = parseQuery(WorkspaceGitStatusQuerySchema, {
+        cwd: url.searchParams.get("cwd") ?? undefined,
+      });
+      const result = readWorkspaceGitStatus(query.cwd);
+      jsonResponse(res, 200, {
+        ok: true,
+        cwd: result.cwd,
+        branch: result.branch,
+        hasUncommittedChanges: result.hasUncommittedChanges,
+        files: result.files,
+      });
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/api/workspace/git/diff") {
+      const query = parseQuery(WorkspaceGitDiffQuerySchema, {
+        cwd: url.searchParams.get("cwd") ?? undefined,
+        path: url.searchParams.get("path") ?? undefined,
+      });
+      const result = readWorkspaceGitDiff(query.cwd, query.path);
+      jsonResponse(res, 200, {
+        ok: true,
+        cwd: result.cwd,
+        path: result.path,
+        diff: result.diff,
+        truncated: result.truncated,
       });
       return;
     }

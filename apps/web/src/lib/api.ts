@@ -218,6 +218,85 @@ const DirectoryReadResponseSchema = z
   })
   .strict();
 
+
+const FilesystemEntrySchema = z
+  .object({
+    name: z.string(),
+    path: z.string(),
+    kind: z.enum(["directory", "file"]),
+  })
+  .strict();
+
+const FilesystemEntriesResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    path: z.string(),
+    parentPath: z.string().nullable(),
+    entries: z.array(FilesystemEntrySchema),
+  })
+  .strict();
+
+const FileReadResponseSchema = z
+  .discriminatedUnion("status", [
+    z
+      .object({
+        ok: z.literal(true),
+        status: z.literal("available"),
+        path: z.string(),
+        content: z.string(),
+        truncated: z.boolean(),
+        isBinary: z.boolean(),
+      })
+      .strict(),
+    z
+      .object({
+        ok: z.literal(true),
+        status: z.literal("missing"),
+        path: z.string(),
+      })
+      .strict(),
+  ]);
+
+const WorkspaceGitFileStatusKindSchema = z.enum([
+  "added",
+  "modified",
+  "deleted",
+  "renamed",
+  "copied",
+  "unmerged",
+  "untracked",
+  "typeChanged",
+]);
+
+const WorkspaceGitStatusResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    cwd: z.string(),
+    branch: z.string().nullable(),
+    hasUncommittedChanges: z.boolean(),
+    files: z.array(
+      z
+        .object({
+          path: z.string(),
+          previousPath: z.string().optional(),
+          stagedStatus: z.union([WorkspaceGitFileStatusKindSchema, z.null()]),
+          unstagedStatus: z.union([WorkspaceGitFileStatusKindSchema, z.null()]),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const WorkspaceGitDiffResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    cwd: z.string(),
+    path: z.string(),
+    diff: z.string(),
+    truncated: z.boolean(),
+  })
+  .strict();
+
 const HistoryEntrySummarySchema = z
   .object({
     id: z.string(),
@@ -1109,6 +1188,78 @@ export async function readServerDirectory(input?: {
     DirectoryReadResponseSchema,
     undefined,
     input?.baseUrlOverride,
+  );
+}
+
+
+export async function readFilesystemEntries(input?: {
+  path?: string;
+  baseUrlOverride?: string;
+}): Promise<z.infer<typeof FilesystemEntriesResponseSchema>> {
+  const params = new URLSearchParams();
+  if (input?.path) {
+    params.set("path", input.path);
+  }
+  const query = params.toString();
+  return requestEnvelope(
+    `/api/filesystem/entries${query.length > 0 ? `?${query}` : ""}`,
+    FilesystemEntriesResponseSchema,
+    undefined,
+    input?.baseUrlOverride,
+  );
+}
+
+export async function readFilesystemFile(input: {
+  path: string;
+  baseUrlOverride?: string;
+}): Promise<z.infer<typeof FileReadResponseSchema>> {
+  const params = new URLSearchParams({ path: input.path });
+  return requestEnvelope(
+    `/api/filesystem/file?${params.toString()}`,
+    FileReadResponseSchema,
+    undefined,
+    input.baseUrlOverride,
+  );
+}
+
+export function getFilesystemRawFileUrl(input: {
+  path: string;
+  baseUrlOverride?: string;
+}): string {
+  const params = new URLSearchParams({ path: input.path });
+  return buildServerUrl(
+    `/api/filesystem/file/raw?${params.toString()}`,
+    input.baseUrlOverride,
+  );
+}
+
+export async function getWorkspaceGitStatus(input: {
+  cwd: string;
+  baseUrlOverride?: string;
+}): Promise<z.infer<typeof WorkspaceGitStatusResponseSchema>> {
+  const params = new URLSearchParams({ cwd: input.cwd });
+  return requestEnvelope(
+    `/api/workspace/git/status?${params.toString()}`,
+    WorkspaceGitStatusResponseSchema,
+    undefined,
+    input.baseUrlOverride,
+  );
+}
+
+export async function getWorkspaceGitDiff(input: {
+  cwd: string;
+  path: string;
+  baseUrlOverride?: string;
+}): Promise<z.infer<typeof WorkspaceGitDiffResponseSchema>> {
+  const params = new URLSearchParams({
+    cwd: input.cwd,
+    path: input.path,
+  });
+  return requestEnvelope(
+    `/api/workspace/git/diff?${params.toString()}`,
+    WorkspaceGitDiffResponseSchema,
+    undefined,
+    input.baseUrlOverride,
   );
 }
 

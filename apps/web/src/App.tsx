@@ -13,6 +13,7 @@ import {
   Bug,
   Circle,
   CircleDot,
+  FileText,
   Folder,
   FolderOpen,
   Github,
@@ -40,11 +41,16 @@ import {
   getPendingApprovalRequests,
   getPendingThreadRequests,
   getPendingUserInputRequests,
+  getFilesystemRawFileUrl,
   getServerBaseUrl,
   getStreamEvents,
   getUnifiedEventsUrl,
+  getWorkspaceGitDiff,
+  getWorkspaceGitStatus,
   listAgentsForBaseUrl,
   listSavedServerTargets,
+  readFilesystemEntries,
+  readFilesystemFile,
   readThread,
   readServerDirectory,
   removeNamedServerTarget,
@@ -85,9 +91,11 @@ import {
   type UnifiedInputPart,
 } from "@farfield/unified-surface";
 import { useTheme } from "@/hooks/useTheme";
+import { languageFromPath } from "@/lib/code-language";
 import { ChatTimeline, type ChatTimelineEntry } from "@/components/ChatTimeline";
 import { ChatComposer } from "@/components/ChatComposer";
 import { CodeSnippet } from "@/components/CodeSnippet";
+import { DiffBlock } from "@/components/DiffBlock";
 import { PendingApprovalCard } from "@/components/PendingApprovalCard";
 import { PendingInformationalRequestCard } from "@/components/PendingInformationalRequestCard";
 import { PendingRequestCard } from "@/components/PendingRequestCard";
@@ -126,6 +134,10 @@ type LiveStateResponse = Awaited<ReturnType<typeof getLiveState>>;
 type StreamEventsResponse = Awaited<ReturnType<typeof getStreamEvents>>;
 type ReadThreadResponse = Awaited<ReturnType<typeof readThread>>;
 type AgentsResponse = Awaited<ReturnType<typeof listAgents>>;
+type WorkspaceGitStatusResponse = Awaited<ReturnType<typeof getWorkspaceGitStatus>>;
+type WorkspaceGitDiffResponse = Awaited<ReturnType<typeof getWorkspaceGitDiff>>;
+type WorkspaceFileResponse = Awaited<ReturnType<typeof readFilesystemFile>>;
+type WorkspaceEntriesResponse = Awaited<ReturnType<typeof readFilesystemEntries>>;
 type TraceStatus = Awaited<ReturnType<typeof getTraceStatus>>;
 type HistoryResponse = Awaited<ReturnType<typeof listDebugHistory>>;
 type HistoryDetail = Awaited<ReturnType<typeof getHistoryEntry>>;
@@ -202,6 +214,8 @@ interface ProviderCatalogCacheEntry {
   baseUrl: string;
 }
 
+type AppTab = "chat" | "workspace" | "debug";
+
 interface AppViewSnapshot {
   threads: Thread[];
   threadListErrors: ThreadListProviderErrors;
@@ -213,7 +227,7 @@ interface AppViewSnapshot {
   models: ModelsResponse["data"];
   agentDescriptors: AgentDescriptor[];
   selectedAgentId: AgentId;
-  activeTab: "chat" | "debug";
+  activeTab: AppTab;
 }
 
 interface SidebarTargetResult {
@@ -247,6 +261,16 @@ interface DirectoryBrowserState {
     name: string;
     path: string;
     kind: "directory";
+  }>;
+}
+
+interface WorkspaceEntriesState {
+  path: string;
+  parentPath: string | null;
+  entries: Array<{
+    name: string;
+    path: string;
+    kind: "directory" | "file";
   }>;
 }
 
@@ -1454,60 +1478,185 @@ function formatResetTimestamp(resetAtSeconds: number | null): string | null {
   });
 }
 
-function parseUiStateFromPath(pathname: string): {
-  threadId: string | null;
-  tab: "chat" | "debug";
-} {
-  if (!DEBUG_UI_ENABLED) {
-    const segments = pathname
-      .split("/")
-      .filter((segment) => segment.length > 0);
-    if (
-      segments[0] === "threads" &&
-      typeof segments[1] === "string" &&
-      segments[1].length > 0
-    ) {
-      return { threadId: decodeURIComponent(segments[1]), tab: "chat" };
-    }
-    return { threadId: null, tab: "chat" };
+function workspaceStatusLabel(
+  status: WorkspaceGitStatusResponse["files"][number]["stagedStatus"],
+): string {
+  switch (status) {
+    case "added":
+      return "Added";
+    case "modified":
+      return "Modified";
+    case "deleted":
+      return "Deleted";
+    case "renamed":
+      return "Renamed";
+    case "copied":
+      return "Copied";
+    case "unmerged":
+      return "Unmerged";
+    case "untracked":
+      return "Untracked";
+    case "typeChanged":
+      return "Type changed";
+    case null:
+      return "Clean";
+  }
+}
+
+function workspacePreferredMode(
+  file: WorkspaceGitStatusResponse["files"][number] | null,
+): "diff" | "file" {
+  if (!file) {
+    return "file";
   }
 
+  return workspaceSupportsDiff(file) ? "diff" : "file";
+}
+
+function workspaceDiffKind(
+  file: WorkspaceGitStatusResponse["files"][number] | null,
+): { type: "create" | "modify" | "delete"; movePath?: string | null } {
+  if (file === null) {
+    return { type: "modify" };
+  }
+
+  const status = file.unstagedStatus ?? file.stagedStatus;
+  switch (status) {
+    case "added":
+    case "untracked":
+    case "copied":
+      return { type: "create" };
+    case "deleted":
+      return { type: "delete" };
+    case "renamed":
+      return file.previousPath
+        ? { type: "modify", movePath: file.previousPath }
+        : { type: "modify" };
+    case "modified":
+    case "unmerged":
+    case "typeChanged":
+    case null:
+      return { type: "modify" };
+  }
+}
+
+function workspaceIsImagePath(pathValue: string): boolean {
+  const normalized = pathValue.trim().toLowerCase();
+  return (
+    normalized.endsWith(".png") ||
+    normalized.endsWith(".jpg") ||
+    normalized.endsWith(".jpeg") ||
+    normalized.endsWith(".gif") ||
+    normalized.endsWith(".webp") ||
+    normalized.endsWith(".avif") ||
+    normalized.endsWith(".svg")
+  );
+}
+
+function workspaceHasDeletedStatus(
+  file: WorkspaceGitStatusResponse["files"][number] | null,
+): boolean {
+  if (!file) {
+    return false;
+  }
+  return file.stagedStatus === "deleted" || file.unstagedStatus === "deleted";
+}
+
+function workspaceSupportsDiff(
+  file: WorkspaceGitStatusResponse["files"][number] | null,
+): boolean {
+  if (!file) {
+    return false;
+  }
+  if (workspaceIsImagePath(file.path)) {
+    return false;
+  }
+  const fileName = basenameFromPath(file.path).toLowerCase();
+  return (
+    languageFromPath(file.path) !== "text" ||
+    file.path.endsWith(".txt") ||
+    fileName === "readme" ||
+    fileName === "dockerfile"
+  );
+}
+
+function normalizeWorkspacePath(pathValue: string): string {
+  const normalized = pathValue.replaceAll("\\", "/");
+  if (normalized === "/") {
+    return normalized;
+  }
+  return normalized.replace(/\/+$/, "");
+}
+
+function isWithinWorkspaceRoot(rootPath: string, candidatePath: string): boolean {
+  const normalizedRoot = normalizeWorkspacePath(rootPath);
+  const normalizedCandidate = normalizeWorkspacePath(candidatePath);
+  return (
+    normalizedCandidate === normalizedRoot ||
+    normalizedCandidate.startsWith(`${normalizedRoot}/`)
+  );
+}
+
+function getWorkspaceParentPath(
+  rootPath: string,
+  currentPath: string | null,
+  parentPath: string | null,
+): string | null {
+  if (
+    currentPath === null ||
+    normalizeWorkspacePath(currentPath) === normalizeWorkspacePath(rootPath)
+  ) {
+    return null;
+  }
+  if (parentPath === null) {
+    return null;
+  }
+  return isWithinWorkspaceRoot(rootPath, parentPath) ? parentPath : null;
+}
+
+function parseUiStateFromPath(pathname: string): {
+  threadId: string | null;
+  tab: AppTab;
+} {
   const segments = pathname.split("/").filter((segment) => segment.length > 0);
+
   if (segments.length === 0) {
     return { threadId: null, tab: "chat" };
   }
-  if (segments.length === 1 && segments[0] === "debug") {
+
+  if (DEBUG_UI_ENABLED && segments.length === 1 && segments[0] === "debug") {
     return { threadId: null, tab: "debug" };
   }
+
   if (
     segments[0] === "threads" &&
     typeof segments[1] === "string" &&
     segments[1].length > 0
   ) {
     const threadId = decodeURIComponent(segments[1]);
-    if (segments[2] === "debug") {
+    if (segments[2] === "workspace") {
+      return { threadId, tab: "workspace" };
+    }
+    if (DEBUG_UI_ENABLED && segments[2] === "debug") {
       return { threadId, tab: "debug" };
     }
     return { threadId, tab: "chat" };
   }
+
   return { threadId: null, tab: "chat" };
 }
 
 function buildPathFromUiState(
   threadId: string | null,
-  tab: "chat" | "debug",
+  tab: AppTab,
 ): string {
-  if (!DEBUG_UI_ENABLED) {
-    if (!threadId) {
-      return "/";
-    }
-    return `/threads/${encodeURIComponent(threadId)}`;
-  }
-
   if (!threadId) {
-    return tab === "debug" ? "/debug" : "/";
+    return DEBUG_UI_ENABLED && tab === "debug" ? "/debug" : "/";
   }
-  if (tab === "debug") {
+  if (tab === "workspace") {
+    return `/threads/${encodeURIComponent(threadId)}/workspace`;
+  }
+  if (DEBUG_UI_ENABLED && tab === "debug") {
     return `/threads/${encodeURIComponent(threadId)}/debug`;
   }
   return `/threads/${encodeURIComponent(threadId)}`;
@@ -1620,9 +1769,7 @@ export function App(): React.JSX.Element {
   const initialSnapshot = ENABLE_VIEW_SNAPSHOT_CACHE
     ? appViewSnapshotCache
     : null;
-  const initialTab: "chat" | "debug" = DEBUG_UI_ENABLED
-    ? initialSnapshot?.activeTab ?? initialUiState.tab
-    : "chat";
+  const initialTab: AppTab = initialSnapshot?.activeTab ?? initialUiState.tab;
 
   /* State */
   const [error, setError] = useState("");
@@ -1713,11 +1860,28 @@ export function App(): React.JSX.Element {
     useState(false);
   const [directoryBrowserState, setDirectoryBrowserState] =
     useState<DirectoryBrowserState | null>(null);
+  const [workspaceEntriesState, setWorkspaceEntriesState] =
+    useState<WorkspaceEntriesState | null>(null);
+  const [workspaceEntriesPath, setWorkspaceEntriesPath] =
+    useState<string | null>(null);
+  const [workspaceGitStatus, setWorkspaceGitStatus] =
+    useState<WorkspaceGitStatusResponse | null>(null);
+  const [workspaceSelectedPath, setWorkspaceSelectedPath] =
+    useState<string | null>(null);
+  const [workspaceSelectedMode, setWorkspaceSelectedMode] =
+    useState<"diff" | "file">("diff");
+  const [workspaceFileContent, setWorkspaceFileContent] =
+    useState<WorkspaceFileResponse | null>(null);
+  const [workspaceGitDiff, setWorkspaceGitDiff] =
+    useState<WorkspaceGitDiffResponse | null>(null);
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
+  const [isWorkspaceContentLoading, setIsWorkspaceContentLoading] =
+    useState(false);
+  const [workspaceMobilePane, setWorkspaceMobilePane] =
+    useState<"navigator" | "viewer">("navigator");
 
   /* UI state */
-  const [activeTab, setActiveTab] = useState<"chat" | "debug">(
-    initialTab,
-  );
+  const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobileSidebarDragOffset, setMobileSidebarDragOffset] = useState<
     number | null
@@ -1748,9 +1912,7 @@ export function App(): React.JSX.Element {
 
   /* Refs */
   const selectedThreadIdRef = useRef<string | null>(null);
-  const activeTabRef = useRef<"chat" | "debug">(
-    initialTab,
-  );
+  const activeTabRef = useRef<AppTab>(initialTab);
   const refreshTimerRef = useRef<number | null>(null);
   const pendingRefreshFlagsRef = useRef<RefreshFlags>({
     refreshCore: false,
@@ -1854,6 +2016,15 @@ export function App(): React.JSX.Element {
     [selectedNewThreadAgent],
   );
   const selectedThreadServerBaseUrl = selectedThread?.serverBaseUrl ?? null;
+  const selectedThreadWorkspacePath =
+    readThreadState?.thread.id === selectedThreadId
+      ? (readThreadState.thread.cwd ?? liveState?.conversationState?.cwd ?? selectedThread?.cwd ?? null)
+      : (liveState?.threadId === selectedThreadId
+          ? (liveState.conversationState?.cwd ?? selectedThread?.cwd ?? null)
+          : (selectedThread?.cwd ?? null));
+  const selectedThreadWorkspaceLabel = selectedThreadWorkspacePath
+    ? basenameFromPath(selectedThreadWorkspacePath)
+    : null;
   const activeServerBaseUrl = selectedThreadServerBaseUrl ?? serverBaseUrl;
   const editingServerTarget = useMemo(
     () =>
@@ -2391,6 +2562,69 @@ export function App(): React.JSX.Element {
   const hasHiddenChatItems = conversationWindow.hasHidden;
   const visibleConversationItems = conversationWindow.visibleItems;
   const visibleConversationItemCount = visibleConversationItems.length;
+  const workspaceSelectedGitFile = useMemo(
+    () =>
+      workspaceGitStatus?.files.find((file) => file.path === workspaceSelectedPath) ??
+      null,
+    [workspaceGitStatus?.files, workspaceSelectedPath],
+  );
+  const workspacePreviewLanguage = useMemo(
+    () => languageFromPath(workspaceSelectedPath ?? ""),
+    [workspaceSelectedPath],
+  );
+  const workspaceSelectedFileMissing = workspaceFileContent?.status === "missing";
+  const workspaceSelectedStatusLabel = useMemo(
+    () =>
+      workspaceSelectedGitFile
+        ? workspaceStatusLabel(
+            workspaceSelectedGitFile.unstagedStatus ??
+              workspaceSelectedGitFile.stagedStatus,
+          )
+        : null,
+    [workspaceSelectedGitFile],
+  );
+  const workspaceSelectionSupportsDiff = useMemo(
+    () => workspaceSupportsDiff(workspaceSelectedGitFile),
+    [workspaceSelectedGitFile],
+  );
+  const workspaceSelectionIsDeleted = useMemo(
+    () => workspaceHasDeletedStatus(workspaceSelectedGitFile),
+    [workspaceSelectedGitFile],
+  );
+  const workspaceSelectionIsImage = useMemo(
+    () => (workspaceSelectedPath ? workspaceIsImagePath(workspaceSelectedPath) : false),
+    [workspaceSelectedPath],
+  );
+  const workspaceRawFileUrl = useMemo(() => {
+    if (!workspaceSelectedPath || !workspaceSelectionIsImage) {
+      return null;
+    }
+    return getFilesystemRawFileUrl({
+      path: workspaceSelectedPath,
+      baseUrlOverride:
+        selectedThreadServerBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl,
+    });
+  }, [
+    primaryServerTarget?.baseUrl,
+    selectedThreadServerBaseUrl,
+    serverBaseUrl,
+    workspaceSelectedPath,
+    workspaceSelectionIsImage,
+  ]);
+  const workspaceParentPath = useMemo(() => {
+    if (!selectedThreadWorkspacePath) {
+      return null;
+    }
+    return getWorkspaceParentPath(
+      selectedThreadWorkspacePath,
+      workspaceEntriesState?.path ?? null,
+      workspaceEntriesState?.parentPath ?? null,
+    );
+  }, [
+    selectedThreadWorkspacePath,
+    workspaceEntriesState?.parentPath,
+    workspaceEntriesState?.path,
+  ]);
   const commitLabel = health?.state.gitCommit ?? "unknown";
   const scrollChatToBottom = useCallback(() => {
     const scroller = scrollRef.current;
@@ -4433,6 +4667,186 @@ export function App(): React.JSX.Element {
     );
   }, [loadHistoryDetail, selectedHistoryId]);
 
+  const loadWorkspaceEntries = useCallback(
+    async (nextPath: string) => {
+      const baseUrlOverride =
+        selectedThreadServerBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl;
+      const result = await readFilesystemEntries({
+        path: nextPath,
+        baseUrlOverride,
+      });
+      setWorkspaceEntriesState(result);
+      return result;
+    },
+    [primaryServerTarget?.baseUrl, selectedThreadServerBaseUrl, serverBaseUrl],
+  );
+
+  useEffect(() => {
+    if (activeTab !== "workspace" || !selectedThreadWorkspacePath) {
+      return;
+    }
+
+    const baseUrlOverride =
+      selectedThreadServerBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl;
+    let cancelled = false;
+
+    setIsWorkspaceLoading(true);
+    setWorkspaceEntriesPath(selectedThreadWorkspacePath);
+    setWorkspaceEntriesState(null);
+    setWorkspaceGitStatus(null);
+    setWorkspaceSelectedPath(null);
+    setWorkspaceFileContent(null);
+    setWorkspaceGitDiff(null);
+    setIsWorkspaceContentLoading(false);
+    setWorkspaceMobilePane("navigator");
+
+    void (async () => {
+      try {
+        const [gitStatusResult, entriesResult] = await Promise.all([
+          getWorkspaceGitStatus({
+            cwd: selectedThreadWorkspacePath,
+            baseUrlOverride,
+          }),
+          readFilesystemEntries({
+            path: selectedThreadWorkspacePath,
+            baseUrlOverride,
+          }),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceGitStatus(gitStatusResult);
+        setWorkspaceEntriesState(entriesResult);
+        const currentSelection =
+          workspaceSelectedPath !== null
+            ? gitStatusResult.files.find((file) => file.path === workspaceSelectedPath) ??
+              gitStatusResult.files[0] ??
+              null
+            : gitStatusResult.files[0] ?? null;
+        if (currentSelection) {
+          setWorkspaceSelectedPath(currentSelection.path);
+          setWorkspaceSelectedMode(workspacePreferredMode(currentSelection));
+          return;
+        }
+        const firstFileEntry =
+          entriesResult.entries.find((entry) => entry.kind === "file") ?? null;
+        setWorkspaceSelectedPath(firstFileEntry?.path ?? null);
+        setWorkspaceSelectedMode("file");
+      } catch (error) {
+        if (!cancelled) {
+          setError(toErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsWorkspaceLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    primaryServerTarget?.baseUrl,
+    selectedThreadId,
+    selectedThreadServerBaseUrl,
+    selectedThreadWorkspacePath,
+    serverBaseUrl,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== "workspace" || !workspaceEntriesPath) {
+      return;
+    }
+    if (workspaceEntriesState?.path === workspaceEntriesPath) {
+      return;
+    }
+
+    void loadWorkspaceEntries(workspaceEntriesPath).catch((error) => {
+      setError(toErrorMessage(error));
+    });
+  }, [activeTab, loadWorkspaceEntries, workspaceEntriesPath, workspaceEntriesState?.path]);
+
+  useEffect(() => {
+    if (
+      activeTab !== "workspace" ||
+      !selectedThreadWorkspacePath ||
+      !workspaceSelectedPath
+    ) {
+      setWorkspaceFileContent(null);
+      setWorkspaceGitDiff(null);
+      setIsWorkspaceContentLoading(false);
+      return;
+    }
+
+    const baseUrlOverride =
+      selectedThreadServerBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl;
+    let cancelled = false;
+
+    setIsWorkspaceContentLoading(true);
+    setWorkspaceFileContent(null);
+    setWorkspaceGitDiff(null);
+
+    void (async () => {
+      try {
+        const shouldLoadDiff = workspaceSelectedMode === "diff" && workspaceSelectionSupportsDiff;
+        const shouldLoadImagePreview =
+          workspaceSelectedMode === "file" && workspaceSelectionIsImage;
+        const shouldLoadTextFile =
+          workspaceSelectedMode === "file" &&
+          !workspaceSelectionIsImage &&
+          !workspaceSelectionIsDeleted;
+        const fileContentResult =
+          shouldLoadTextFile
+            ? await readFilesystemFile({
+                path: workspaceSelectedPath,
+                baseUrlOverride,
+              })
+            : null;
+        const diffResult =
+          shouldLoadDiff
+            ? await getWorkspaceGitDiff({
+                cwd: selectedThreadWorkspacePath,
+                path: workspaceSelectedPath,
+                baseUrlOverride,
+              })
+            : null;
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceFileContent(fileContentResult);
+        setWorkspaceGitDiff(diffResult);
+        if (shouldLoadImagePreview || workspaceSelectionIsDeleted) {
+          setWorkspaceFileContent(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setError(toErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsWorkspaceContentLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    primaryServerTarget?.baseUrl,
+    selectedThreadServerBaseUrl,
+    selectedThreadWorkspacePath,
+    serverBaseUrl,
+    workspaceSelectedMode,
+    workspaceSelectedPath,
+    workspaceSelectionIsDeleted,
+    workspaceSelectionIsImage,
+    workspaceSelectionSupportsDiff,
+  ]);
+
   const handleAnswerChange = useCallback(
     (questionId: string, field: "option" | "freeform", value: string) => {
       setAnswerDraft((prev) => ({
@@ -5356,6 +5770,14 @@ export function App(): React.JSX.Element {
                     </span>
                   )}
                 </div>
+                {selectedThreadWorkspacePath && (
+                  <div className="flex items-center gap-1.5 min-w-0 text-[11px] leading-4 text-muted-foreground/75">
+                    <span className="shrink-0 rounded-md bg-muted/50 px-1.5 py-0.5 font-medium text-foreground/80">
+                      {selectedThreadWorkspaceLabel}
+                    </span>
+                    <span className="truncate">{selectedThreadWorkspacePath}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -5575,6 +5997,44 @@ export function App(): React.JSX.Element {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {(selectedThreadId || DEBUG_UI_ENABLED) && (
+              <div className="shrink-0 border-b border-border px-3 py-2">
+                <div className="-my-1 flex items-center gap-1 overflow-x-auto py-1">
+                  <Button
+                    type="button"
+                    variant={activeTab === "chat" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => setActiveTab("chat")}
+                  >
+                    Chat
+                  </Button>
+                  {selectedThreadId && (
+                    <Button
+                      type="button"
+                      variant={activeTab === "workspace" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => setActiveTab("workspace")}
+                    >
+                      Workspace
+                    </Button>
+                  )}
+                  {DEBUG_UI_ENABLED && (
+                    <Button
+                      type="button"
+                      variant={activeTab === "debug" ? "secondary" : "ghost"}
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => setActiveTab("debug")}
+                    >
+                      Debug
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── Chat tab ──────────────────────────────────────── */}
             {activeTab === "chat" && (
@@ -5822,6 +6282,467 @@ export function App(): React.JSX.Element {
                     </AnimatePresence>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === "workspace" && (
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {!selectedThreadWorkspacePath ? (
+                  <div className="h-full flex items-center justify-center px-6 text-sm text-muted-foreground">
+                    This thread does not have a workspace path.
+                  </div>
+                ) : (
+                  <>
+                    <div className="hidden md:grid h-full min-h-0 md:grid-cols-[320px_minmax(0,1fr)] divide-x divide-border">
+                      <div className="min-h-0 overflow-y-auto p-3 space-y-3">
+                        <div className="rounded-xl border border-border bg-card/50 p-3 space-y-1">
+                          <div className="text-xs text-muted-foreground">Project</div>
+                          <div className="font-medium truncate">{selectedThreadWorkspaceLabel}</div>
+                          <div className="text-xs text-muted-foreground break-all">{selectedThreadWorkspacePath}</div>
+                          <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                            <span>Branch: {workspaceGitStatus?.branch ?? "unknown"}</span>
+                            <span>Changed: {workspaceGitStatus?.files.length ?? 0}</span>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border overflow-hidden">
+                          <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs font-medium">Changed Files</div>
+                          <div className="max-h-64 overflow-y-auto">
+                            {workspaceGitStatus?.files.length ? workspaceGitStatus.files.map((file) => (
+                              <Button
+                                key={file.path}
+                                type="button"
+                                variant="ghost"
+                                className={`h-auto w-full rounded-none justify-start px-3 py-2 text-left ${workspaceSelectedPath === file.path ? "bg-muted" : ""}`}
+                                onClick={() => {
+                                  setWorkspaceSelectedPath(file.path);
+                                  setWorkspaceSelectedMode(workspacePreferredMode(file));
+                                }}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-mono text-xs">{basenameFromPath(file.path)}</div>
+                                  <div className="truncate text-[11px] text-muted-foreground">{file.path}</div>
+                                </div>
+                                <div className="shrink-0 text-[10px] text-muted-foreground">
+                                  {workspaceStatusLabel(file.unstagedStatus ?? file.stagedStatus)}
+                                </div>
+                              </Button>
+                            )) : (
+                              <div className="px-3 py-3 text-xs text-muted-foreground">No changed files</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border overflow-hidden">
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-muted/30">
+                            <span className="text-xs font-medium">Files</span>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 rounded-lg px-2"
+                                disabled={workspaceParentPath === null}
+                                onClick={() => {
+                                  if (!workspaceParentPath) {
+                                    return;
+                                  }
+                                  setWorkspaceEntriesPath(workspaceParentPath);
+                                }}
+                              >
+                                Up
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 rounded-lg px-2"
+                                onClick={() => {
+                                  if (!selectedThreadWorkspacePath) {
+                                    return;
+                                  }
+                                  setWorkspaceEntriesPath(selectedThreadWorkspacePath);
+                                }}
+                              >
+                                Root
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border truncate">
+                            {workspaceEntriesState?.path ?? selectedThreadWorkspacePath}
+                          </div>
+                          <div className="max-h-72 overflow-y-auto">
+                            {workspaceEntriesState?.entries.length ? workspaceEntriesState.entries.map((entry) => (
+                              <Button
+                                key={entry.path}
+                                type="button"
+                                variant="ghost"
+                                className={`h-auto w-full rounded-none justify-start gap-2 px-3 py-2 text-left ${workspaceSelectedPath === entry.path ? "bg-muted" : ""}`}
+                                onClick={() => {
+                                  if (entry.kind === "directory") {
+                                    setWorkspaceEntriesPath(entry.path);
+                                    return;
+                                  }
+                                  setWorkspaceSelectedPath(entry.path);
+                                  setWorkspaceSelectedMode("file");
+                                }}
+                              >
+                                {entry.kind === "directory" ? (
+                                  <FolderOpen size={13} />
+                                ) : (
+                                  <FileText size={13} />
+                                )}
+                                <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span>
+                              </Button>
+                            )) : (
+                              <div className="px-3 py-3 text-xs text-muted-foreground">No files</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="min-h-0 overflow-y-auto p-4 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">
+                              {workspaceSelectedPath ? basenameFromPath(workspaceSelectedPath) : "Select a file"}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {workspaceSelectedPath ?? "Choose a changed file or browse the project"}
+                            </div>
+                          </div>
+                          {workspaceSelectedPath && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant={workspaceSelectedMode === "diff" ? "secondary" : "ghost"}
+                                size="sm"
+                                className="rounded-full"
+                                disabled={!workspaceSelectionSupportsDiff}
+                                onClick={() => setWorkspaceSelectedMode("diff")}
+                              >
+                                Diff
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={workspaceSelectedMode === "file" ? "secondary" : "ghost"}
+                                size="sm"
+                                className="rounded-full"
+                                onClick={() => setWorkspaceSelectedMode("file")}
+                              >
+                                File
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">Workspace</div>
+                            <div className="truncate text-sm font-medium">
+                              {selectedThreadWorkspaceLabel ?? "Unknown"}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">Branch</div>
+                            <div className="truncate text-sm font-medium">
+                              {workspaceGitStatus?.branch ?? "unknown"}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
+                            <div className="text-[11px] text-muted-foreground">Selection</div>
+                            <div className="truncate text-sm font-medium">
+                              {workspaceSelectedStatusLabel ?? "Browsing files"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {(isWorkspaceLoading || isWorkspaceContentLoading) && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 size={14} className="animate-spin" />
+                            {isWorkspaceLoading
+                              ? "Loading workspace…"
+                              : "Loading file…"}
+                          </div>
+                        )}
+
+                        {workspaceSelectedPath ? (
+                          workspaceSelectedMode === "diff" ? (
+                            workspaceGitDiff?.diff ? (
+                              <DiffBlock
+                                changes={[
+                                  {
+                                    path: workspaceSelectedPath,
+                                    kind: workspaceDiffKind(workspaceSelectedGitFile),
+                                    diff: workspaceGitDiff.diff,
+                                  },
+                                ]}
+                              />
+                            ) : (
+                              <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
+                                No diff available for this file.
+                              </div>
+                            )
+                          ) : workspaceSelectionIsImage && workspaceRawFileUrl ? (
+                            <div className="rounded-xl border border-border bg-card/30 p-3">
+                              <img
+                                src={workspaceRawFileUrl}
+                                alt={basenameFromPath(workspaceSelectedPath)}
+                                className="max-h-[70vh] w-full rounded-lg object-contain"
+                                loading="lazy"
+                              />
+                            </div>
+                          ) : workspaceSelectedFileMissing ? (
+                            <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
+                              This file is no longer available in the workspace. It may have been deleted or moved.
+                            </div>
+                          ) : workspaceSelectionIsDeleted ? (
+                            <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
+                              Deleted files can only be previewed in diff mode.
+                            </div>
+                          ) : workspaceFileContent?.status === "available" &&
+                            workspaceFileContent.isBinary ? (
+                            <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
+                              Binary files cannot be previewed here.
+                            </div>
+                          ) : (
+                            <CodeSnippet
+                              code={
+                                workspaceFileContent?.status === "available"
+                                  ? workspaceFileContent.content
+                                  : ""
+                              }
+                              language={workspacePreviewLanguage}
+                              className="[&>pre]:border [&>pre]:border-border [&>pre]:bg-muted/20"
+                            />
+                          )
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+                            Select a changed file or browse the workspace tree.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="md:hidden h-full min-h-0 flex flex-col">
+                      {workspaceMobilePane === "navigator" ? (
+                        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+                          <div className="rounded-xl border border-border bg-card/50 p-3 space-y-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-medium truncate">{selectedThreadWorkspaceLabel}</div>
+                                <div className="text-xs text-muted-foreground break-all">{selectedThreadWorkspacePath}</div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 shrink-0 rounded-full px-3"
+                                onClick={() => {
+                                  if (workspaceSelectedPath) {
+                                    setWorkspaceMobilePane("viewer");
+                                  }
+                                }}
+                                disabled={workspaceSelectedPath === null}
+                              >
+                                Open
+                              </Button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>Branch: {workspaceGitStatus?.branch ?? "unknown"}</span>
+                              <span>Changed: {workspaceGitStatus?.files.length ?? 0}</span>
+                              <span>
+                                Viewing: {workspaceEntriesState?.path ?? selectedThreadWorkspacePath}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-border overflow-hidden">
+                            <div className="px-3 py-2 border-b border-border bg-muted/30 text-xs font-medium">Changed Files</div>
+                            {workspaceGitStatus?.files.length ? workspaceGitStatus.files.map((file) => (
+                              <Button
+                                key={file.path}
+                                type="button"
+                                variant="ghost"
+                                className={`h-auto w-full rounded-none justify-start px-3 py-2 text-left ${workspaceSelectedPath === file.path ? "bg-muted" : ""}`}
+                                onClick={() => {
+                                  setWorkspaceSelectedPath(file.path);
+                                  setWorkspaceSelectedMode(workspacePreferredMode(file));
+                                  setWorkspaceMobilePane("viewer");
+                                }}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-mono text-xs">{basenameFromPath(file.path)}</div>
+                                  <div className="truncate text-[11px] text-muted-foreground">{workspaceStatusLabel(file.unstagedStatus ?? file.stagedStatus)}</div>
+                                </div>
+                              </Button>
+                            )) : <div className="px-3 py-3 text-xs text-muted-foreground">No changed files</div>}
+                          </div>
+                          <div className="rounded-xl border border-border overflow-hidden">
+                            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-muted/30">
+                              <span className="text-xs font-medium">Files</span>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 rounded-lg px-2"
+                                  disabled={workspaceParentPath === null}
+                                  onClick={() => {
+                                    if (!workspaceParentPath) {
+                                      return;
+                                    }
+                                    setWorkspaceEntriesPath(workspaceParentPath);
+                                  }}
+                                >
+                                  Up
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 rounded-lg px-2"
+                                  onClick={() => {
+                                    if (!selectedThreadWorkspacePath) {
+                                      return;
+                                    }
+                                    setWorkspaceEntriesPath(selectedThreadWorkspacePath);
+                                  }}
+                                >
+                                  Root
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border truncate">
+                              {workspaceEntriesState?.path ?? selectedThreadWorkspacePath}
+                            </div>
+                            {workspaceEntriesState?.entries.length ? workspaceEntriesState.entries.map((entry) => (
+                              <Button
+                                key={entry.path}
+                                type="button"
+                                variant="ghost"
+                                className={`h-auto w-full rounded-none justify-start gap-2 px-3 py-2 text-left ${workspaceSelectedPath === entry.path ? "bg-muted" : ""}`}
+                                onClick={() => {
+                                  if (entry.kind === "directory") {
+                                    setWorkspaceEntriesPath(entry.path);
+                                    return;
+                                  }
+                                  setWorkspaceSelectedPath(entry.path);
+                                  setWorkspaceSelectedMode("file");
+                                  setWorkspaceMobilePane("viewer");
+                                }}
+                              >
+                                {entry.kind === "directory" ? (
+                                  <FolderOpen size={13} />
+                                ) : (
+                                  <FileText size={13} />
+                                )}
+                                <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span>
+                              </Button>
+                            )) : (
+                              <div className="px-3 py-3 text-xs text-muted-foreground">No files</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-full"
+                              onClick={() => setWorkspaceMobilePane("navigator")}
+                            >
+                              Back
+                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant={workspaceSelectedMode === "diff" ? "secondary" : "ghost"}
+                                size="sm"
+                                className="rounded-full"
+                                disabled={!workspaceSelectionSupportsDiff}
+                                onClick={() => setWorkspaceSelectedMode("diff")}
+                              >
+                                Diff
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={workspaceSelectedMode === "file" ? "secondary" : "ghost"}
+                                size="sm"
+                                className="rounded-full"
+                                onClick={() => setWorkspaceSelectedMode("file")}
+                              >
+                                File
+                              </Button>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-medium truncate">{workspaceSelectedPath ? basenameFromPath(workspaceSelectedPath) : "Select a file"}</div>
+                            <div className="text-xs text-muted-foreground break-all">{workspaceSelectedPath ?? "No file selected"}</div>
+                          </div>
+                          <div className="grid gap-2 grid-cols-2">
+                            <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
+                              <div className="text-[11px] text-muted-foreground">Branch</div>
+                              <div className="truncate text-sm font-medium">
+                                {workspaceGitStatus?.branch ?? "unknown"}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-border bg-card/40 px-3 py-2">
+                              <div className="text-[11px] text-muted-foreground">Selection</div>
+                              <div className="truncate text-sm font-medium">
+                                {workspaceSelectedStatusLabel ?? "Browsing files"}
+                              </div>
+                            </div>
+                          </div>
+                          {isWorkspaceContentLoading && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 size={14} className="animate-spin" />
+                              Loading file…
+                            </div>
+                          )}
+                          {workspaceSelectedPath ? (
+                            workspaceSelectedMode === "diff" ? (
+                              workspaceGitDiff?.diff ? (
+                                <DiffBlock
+                                  changes={[
+                                    {
+                                      path: workspaceSelectedPath,
+                                      kind: workspaceDiffKind(workspaceSelectedGitFile),
+                                      diff: workspaceGitDiff.diff,
+                                    },
+                                  ]}
+                                />
+                              ) : (
+                                <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">No diff available for this file.</div>
+                              )
+                            ) : workspaceSelectionIsImage && workspaceRawFileUrl ? (
+                              <div className="rounded-xl border border-border bg-card/30 p-3">
+                                <img
+                                  src={workspaceRawFileUrl}
+                                  alt={basenameFromPath(workspaceSelectedPath)}
+                                  className="max-h-[70vh] w-full rounded-lg object-contain"
+                                  loading="lazy"
+                                />
+                              </div>
+                            ) : workspaceSelectedFileMissing ? (
+                              <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">This file is no longer available in the workspace. It may have been deleted or moved.</div>
+                            ) : workspaceSelectionIsDeleted ? (
+                              <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">Deleted files can only be previewed in diff mode.</div>
+                            ) : workspaceFileContent?.status === "available" &&
+                              workspaceFileContent.isBinary ? (
+                              <div className="rounded-xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">Binary files cannot be previewed here.</div>
+                            ) : (
+                              <CodeSnippet code={workspaceFileContent?.status === "available" ? workspaceFileContent.content : ""} language={workspacePreviewLanguage} className="[&>pre]:border [&>pre]:border-border [&>pre]:bg-muted/20" />
+                            )
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">Select a file first.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
