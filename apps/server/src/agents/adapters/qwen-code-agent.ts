@@ -108,22 +108,6 @@ const QWEN_COLLABORATION_MODES = [
     developer_instructions:
       "Think through the implementation carefully before editing.",
   },
-  {
-    name: "Auto Edit",
-    mode: "auto-edit",
-    model: null,
-    reasoning_effort: null,
-    developer_instructions:
-      "Automatically approve edit tools while still prompting for broader actions.",
-  },
-  {
-    name: "YOLO",
-    mode: "yolo",
-    model: null,
-    reasoning_effort: null,
-    developer_instructions:
-      "Automatically approve all actions for trusted sandboxes only.",
-  },
 ] as const;
 
 export interface QwenCodeAgentOptions {

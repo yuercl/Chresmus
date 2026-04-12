@@ -3,8 +3,8 @@
     "allow": [
       "Bash(bun install:*)",
       "Bash(bun add:*)",
-      "Bash(bun run --filter @farfield/web typecheck:*)",
-      "Bash(bun run --filter @farfield/web build:*)",
+      "Bash(bun run --filter @chresmus/web typecheck:*)",
+      "Bash(bun run --filter @chresmus/web build:*)",
       "Bash(python3:*)"
     ]
   }

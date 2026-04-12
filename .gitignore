@@ -16,8 +16,8 @@ worker.js
 # Runtime logs
 *.log
 .uploads/
-.farfield/
-apps/server/.farfield/
+.chresmus/
+apps/server/.chresmus/
 
 # Local debug fixture
 apps/server/invalid-thread-stream-events.jsonl
