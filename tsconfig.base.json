@@ -20,6 +20,13 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@chresmus/protocol": ["packages/codex-protocol/dist/index.d.ts"],
+      "@chresmus/api": ["packages/codex-api/dist/index.d.ts"],
+      "@chresmus/unified-surface": ["packages/unified-surface/dist/index.d.ts"],
+      "@chresmus/opencode-api": ["packages/opencode-api/dist/index.d.ts"]
+    }
   }
 }

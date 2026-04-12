@@ -10,7 +10,7 @@ import type {
   TurnStartParams,
   UserInputRequestId,
   UserInputResponsePayload,
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 
 export type AgentId = "codex" | "opencode" | "claude" | "qwen";
 

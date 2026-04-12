@@ -1,6 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, GitBranch, X } from "lucide-react";
-import type { UnifiedItem, UnifiedItemKind } from "@farfield/unified-surface";
+import type { UnifiedItem, UnifiedItemKind } from "@chresmus/unified-surface";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { CommandBlock } from "./CommandBlock";
 import { DiffBlock } from "./DiffBlock";

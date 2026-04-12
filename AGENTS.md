@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repo is Farfield — a local UI for Codex desktop threads.
+This repo is Chresmus — a local UI for Codex desktop threads.
 
 ## Absolutely Immutable Extremely Important Rules
 

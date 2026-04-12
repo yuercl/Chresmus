@@ -1,4 +1,4 @@
-# Farfield
+# Chresmus
 
 Remote control for AI coding agents — read conversations, send messages, switch models, and monitor agent activity from a clean web UI.
 
@@ -10,7 +10,7 @@ This is an independent project and is not affiliated with, endorsed by, or spons
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/achimalap)
 
-<img src="./screenshot.png" alt="Farfield screenshot" width="500" />
+<img src="./screenshot.png" alt="Chresmus screenshot" width="500" />
 
 ## Features
 
@@ -22,41 +22,41 @@ This is an independent project and is not affiliated with, endorsed by, or spons
 
 ## Quick start (recommended)
 
-Start the Farfield server:
+Start the Chresmus server:
 
 ```bash
-npx -y @farfield/server@latest
+npx -y @chresmus/server@latest
 ```
 
 This runs the backend on `127.0.0.1:4311` by default.
 
-Start Codex app-server separately and point Farfield at it:
+Start Codex app-server separately and point Chresmus at it:
 
 ```bash
 # terminal 1
 codex app-server --listen ws://127.0.0.1:4320
 
 # terminal 2
-CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npx -y @farfield/server@latest
+CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npx -y @chresmus/server@latest
 ```
 
-Farfield connects to Codex through `CODEX_APP_SERVER_URL`.
+Chresmus connects to Codex through `CODEX_APP_SERVER_URL`.
 
 You can pass server flags too to customize the agents (default is only Codex):
 
 ```bash
-npx -y @farfield/server@latest -- --agents=opencode
-npx -y @farfield/server@latest -- --agents=codex,opencode
-npx -y @farfield/server@latest -- --agents=all
+npx -y @chresmus/server@latest -- --agents=opencode
+npx -y @chresmus/server@latest -- --agents=codex,opencode
+npx -y @chresmus/server@latest -- --agents=all
 ```
 
-You can access the web app at [farfield.app](https://farfield.app). Tap the bottom left status dot to pull up settings.
+Run the Chresmus frontend locally from this repo, or deploy `apps/web` yourself. Then use Settings in the web UI to point it at your Chresmus server.
 
-You will need to make port 4311 remotely accessible via HTTPS and give the public URL to it to the Farfield frontend. None of this routes through an external server. The app runs inside entirely in your browser and tunnels directly to the Farfield server you started above, and all of it is open-source for you to audit yourself. However, if you are ultra paranoid, you can run and host the Farfield frontend too; read on!
+You will need to make port 4311 remotely accessible via HTTPS and give the public URL to the Chresmus frontend you are using. None of this routes through an external server. The app runs entirely in your browser and connects directly to the Chresmus server you started above.
 
 The securest way to open the port for remote access is by putting all devices involved in a private VPN. Tailscale is a free option that works.
 
-Doing this with Tailscale is as simple as installing Tailscale on your phone, computer, etc., and running this command on the device hosting the Farfield server:
+Doing this with Tailscale is as simple as installing Tailscale on your phone, computer, etc., and running this command on the device hosting the Chresmus server:
 ```bash
 tailscale serve --https=443 http://127.0.0.1:4311
 ```
@@ -74,7 +74,7 @@ npm run server
 
 `npm run server` runs only the backend on `0.0.0.0:4311`.
 
-If you are using Codex CLI only, start Codex app-server first and then launch Farfield against it:
+If you are using Codex CLI only, start Codex app-server first and then launch Chresmus against it:
 
 ```bash
 # terminal 1
@@ -92,11 +92,11 @@ npm run server -- --agents=codex,opencode
 npm run server -- --agents=all
 ```
 
-> **Warning:** This exposes the Farfield server on your network. Only use on trusted networks. See below for how to configure Tailscale as a VPN for secure remote access.
+> **Warning:** This exposes the Chresmus server on your network. Only use on trusted networks. See below for how to configure Tailscale as a VPN for secure remote access.
 
 ## Local development and self-hosted frontend
 
-Use this if you are working on Farfield itself, or if you want to run both frontend and backend locally.
+Use this if you are working on Chresmus itself, or if you want to run both frontend and backend locally.
 
 ```bash
 npm install
@@ -131,7 +131,7 @@ Or for network-exposed local development:
 CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npm run dev:remote
 ```
 
-> **Warning:** `dev:remote` exposes Farfield with no authentication. Only use on trusted networks.
+> **Warning:** `dev:remote` exposes Chresmus with no authentication. Only use on trusted networks.
 
 ## Production Mode (No Extra Proxy)
 
@@ -151,7 +151,7 @@ By default, this is local-only:
 If you need a custom backend origin for API proxying:
 
 ```bash
-FARFIELD_API_ORIGIN=http://127.0.0.1:4311 npm run start
+CHRESMUS_API_ORIGIN=http://127.0.0.1:4311 npm run start
 ```
 
 ### React Compiler and production profiling
@@ -165,31 +165,31 @@ Example A/B commands:
 
 ```bash
 # default production build (compiler enabled)
-npm run build --workspace @farfield/web
+npm run build --workspace @chresmus/web
 
 # baseline production build (compiler disabled)
-REACT_COMPILER=0 npm run build --workspace @farfield/web
+REACT_COMPILER=0 npm run build --workspace @chresmus/web
 
 # production profiling build (compiler enabled)
-REACT_PROFILING=1 npm run build --workspace @farfield/web
+REACT_PROFILING=1 npm run build --workspace @chresmus/web
 
 # production profiling build (compiler disabled)
-REACT_PROFILING=1 REACT_COMPILER=0 npm run build --workspace @farfield/web
+REACT_PROFILING=1 REACT_COMPILER=0 npm run build --workspace @chresmus/web
 ```
 
 Run two UIs side-by-side against one backend:
 
 ```bash
 # backend (terminal 1)
-npm run start --workspace @farfield/server
+npm run start --workspace @chresmus/server
 
 # baseline UI (terminal 2, compiler disabled)
-REACT_PROFILING=1 REACT_COMPILER=0 npm run build --workspace @farfield/web -- --outDir dist-baseline
-npm run preview --workspace @farfield/web -- --host 127.0.0.1 --port 4312 --strictPort --outDir dist-baseline
+REACT_PROFILING=1 REACT_COMPILER=0 npm run build --workspace @chresmus/web -- --outDir dist-baseline
+npm run preview --workspace @chresmus/web -- --host 127.0.0.1 --port 4312 --strictPort --outDir dist-baseline
 
 # compiler UI (terminal 3, compiler enabled by default)
-REACT_PROFILING=1 npm run build --workspace @farfield/web -- --outDir dist-compiler
-npm run preview --workspace @farfield/web -- --host 127.0.0.1 --port 4313 --strictPort --outDir dist-compiler
+REACT_PROFILING=1 npm run build --workspace @chresmus/web -- --outDir dist-compiler
+npm run preview --workspace @chresmus/web -- --host 127.0.0.1 --port 4313 --strictPort --outDir dist-compiler
 ```
 
 ## Requirements
@@ -199,7 +199,7 @@ npm run preview --workspace @farfield/web -- --host 127.0.0.1 --port 4313 --stri
 
 ### Codex modes
 
-Farfield uses Codex through `codex app-server`.
+Chresmus uses Codex through `codex app-server`.
 
 Useful environment variables:
 
@@ -210,16 +210,16 @@ Useful environment variables:
 
 This is the detailed setup for the recommended model:
 
-- Hosted frontend (`https://farfield.app`)
-- Local Farfield server running on your machine
+- Self-hosted Chresmus frontend
+- Local Chresmus server running on your machine
 - Secure VPN path using Tailscale
 
 You still need to run the server locally so it can talk to your coding agent.
 
-### 1) Start the Farfield server on your machine
+### 1) Start the Chresmus server on your machine
 
 ```bash
-HOST=0.0.0.0 PORT=4311 npm run dev --workspace @farfield/server
+HOST=0.0.0.0 PORT=4311 npm run dev --workspace @chresmus/server
 ```
 
 Quick local check:
@@ -249,9 +249,9 @@ Check it from a device on your tailnet:
 curl https://<machine>.<tailnet>.ts.net/api/health
 ```
 
-### 3) Pair farfield.app to your server
+### 3) Pair the Chresmus frontend to your server
 
-1. Visit farfield.app on your other device
+1. Open your deployed Chresmus frontend on your other device
 2. Click the status pill in the lower-left corner (green/red dot + commit hash) to open **Settings**.
 3. In **Server**, enter your Tailscale HTTPS URL, for example:
 
@@ -262,7 +262,7 @@ https://<machine>.<tailnet>.ts.net
 
 4. Click **Save**.
 
-Farfield stores this in browser storage and uses it for API calls and live event stream.
+Chresmus stores this in browser storage and uses it for API calls and live event stream.
 
 ### Notes
 

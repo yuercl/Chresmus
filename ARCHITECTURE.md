@@ -1,6 +1,6 @@
 ## Unified Architecture
 
-Farfield now routes both providers through one strict unified surface.
+Chresmus now routes both providers through one strict unified surface.
 
 - Server entrypoints for the web app are under `/api/unified/*`.
 - Codex runs through native app-server methods only.
@@ -34,7 +34,7 @@ This runs:
 
 ## Codex Schema Sync
 
-Farfield now vendors official Codex app-server schemas and generates protocol Zod validators from them.
+Chresmus now vendors official Codex app-server schemas and generates protocol Zod validators from them.
 
 ```bash
 npm run generate:codex-schema
@@ -47,7 +47,7 @@ This command updates:
 
 ## OpenCode Manifest Sync
 
-Farfield also generates an OpenCode manifest from SDK unions used by the mapper layer.
+Chresmus also generates an OpenCode manifest from SDK unions used by the mapper layer.
 
 ```bash
 npm run generate:opencode-manifest

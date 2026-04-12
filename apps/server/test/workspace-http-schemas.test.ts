@@ -13,9 +13,9 @@ describe("workspace query schemas", () => {
     expect(emptyPath.path).toBeUndefined();
 
     const withPath = parseQuery(FilesystemEntriesReadQuerySchema, {
-      path: "/data/code/farfield",
+      path: "/data/code/chresmus",
     });
-    expect(withPath.path).toBe("/data/code/farfield");
+    expect(withPath.path).toBe("/data/code/chresmus");
   });
 
   it("rejects unknown keys for filesystem entries query", () => {

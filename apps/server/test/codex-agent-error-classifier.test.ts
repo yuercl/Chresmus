@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AppServerRpcError } from "@farfield/api";
+import { AppServerRpcError } from "@chresmus/api";
 import {
   isAuthenticationRequiredToReadRateLimitsAppServerRpcError,
   isInvalidRequestAppServerRpcError,

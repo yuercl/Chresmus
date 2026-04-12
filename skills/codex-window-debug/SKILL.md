@@ -2,7 +2,7 @@
 
 Use this skill when you need to verify that messages and responses appear in both:
 - Codex.app UI
-- Farfield web UI and server stream data
+- Chresmus web UI and server stream data
 
 ## What this skill gives you
 

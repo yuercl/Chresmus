@@ -1,5 +1,5 @@
 {
-  "name": "farfield",
+  "name": "chresmus",
   "private": true,
   "packageManager": "npm@11.11.0",
   "workspaces": [
@@ -9,14 +9,14 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:remote": "node scripts/dev.mjs --remote",
-    "server": "npm run dev:remote --workspace @farfield/server",
+    "server": "npm run dev:remote --workspace @chresmus/server",
     "build": "npm run build --workspaces --if-present",
     "start": "node scripts/start.mjs",
     "start:prod": "npm run start",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "prepare:workspace-dist": "npm run build --workspace @farfield/unified-surface --workspace @farfield/protocol --workspace @farfield/opencode-api --workspace @farfield/api",
+    "prepare:workspace-dist": "npm run build --workspace @chresmus/unified-surface --workspace @chresmus/protocol --workspace @chresmus/opencode-api --workspace @chresmus/api",
     "verify:no-cheats": "node scripts/verify-no-cheats.mjs",
     "verify:no-provider-ui-imports": "node scripts/verify-no-provider-imports-in-ui.mjs",
     "verify:codex-generated": "node scripts/verify-codex-generated-clean.mjs",

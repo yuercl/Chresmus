@@ -24,8 +24,8 @@ import {
   type UnifiedThread,
   type UnifiedThreadRequestResponse,
   type UnifiedUserInputRequest,
-} from "@farfield/unified-surface";
-import { AppServerGetAccountRateLimitsResponseSchema } from "@farfield/protocol";
+} from "@chresmus/unified-surface";
+import { AppServerGetAccountRateLimitsResponseSchema } from "@chresmus/protocol";
 import { z } from "zod";
 import {
   buildServerUrl,

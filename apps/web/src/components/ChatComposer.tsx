@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArrowUp, Loader2, Paperclip, X } from "lucide-react";
-import type { UnifiedInputPart } from "@farfield/unified-surface";
+import type { UnifiedInputPart } from "@chresmus/unified-surface";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 

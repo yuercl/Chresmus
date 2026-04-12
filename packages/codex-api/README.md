@@ -1,4 +1,4 @@
-# @farfield/api
+# @chresmus/api
 
 Typed client layer for the Codex app-server.
 
@@ -29,13 +29,13 @@ Typed client layer for the Codex app-server.
 import {
   AppServerClient,
   WebSocketAppServerTransport
-} from "@farfield/api";
-import { parseThreadConversationState } from "@farfield/protocol";
+} from "@chresmus/api";
+import { parseThreadConversationState } from "@chresmus/protocol";
 
 const client = new AppServerClient(
   new WebSocketAppServerTransport({
     url: "ws://127.0.0.1:4320",
-    userAgent: "farfield/dev"
+    userAgent: "chresmus/dev"
   })
 );
 

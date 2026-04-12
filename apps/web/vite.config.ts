@@ -5,8 +5,8 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { z } from "zod";
 
-const FarfieldApiOriginEnvSchema = z.object({
-  FARFIELD_API_ORIGIN: z.string().url().optional(),
+const ChresmusApiOriginEnvSchema = z.object({
+  CHRESMUS_API_ORIGIN: z.string().url().optional(),
   REACT_COMPILER: z
     .enum(["0", "1", "true", "false"])
     .transform((value) => value === "1" || value === "true")
@@ -20,8 +20,8 @@ const FarfieldApiOriginEnvSchema = z.object({
     .transform((value) => value === "1" || value === "true")
     .optional(),
 });
-const parsedEnv = FarfieldApiOriginEnvSchema.safeParse({
-  FARFIELD_API_ORIGIN: process.env["FARFIELD_API_ORIGIN"],
+const parsedEnv = ChresmusApiOriginEnvSchema.safeParse({
+  CHRESMUS_API_ORIGIN: process.env["CHRESMUS_API_ORIGIN"],
   REACT_COMPILER: process.env["REACT_COMPILER"],
   REACT_PROFILING: process.env["REACT_PROFILING"],
   PWA_ENABLED: process.env["PWA_ENABLED"],
@@ -38,13 +38,29 @@ if (!parsedEnv.success) {
   );
 }
 const apiOrigin =
-  parsedEnv.data.FARFIELD_API_ORIGIN ?? "http://127.0.0.1:4311";
+  parsedEnv.data.CHRESMUS_API_ORIGIN ?? "http://127.0.0.1:4311";
 const reactCompilerOverride = parsedEnv.data.REACT_COMPILER ?? null;
 const reactProfilingEnabled = parsedEnv.data.REACT_PROFILING ?? false;
 const pwaEnabled = parsedEnv.data.PWA_ENABLED ?? true;
 
 const resolveAlias: Record<string, string> = {
   "@": path.resolve(__dirname, "./src"),
+  "@chresmus/protocol": path.resolve(
+    __dirname,
+    "../../packages/codex-protocol/dist/index.js",
+  ),
+  "@chresmus/api": path.resolve(
+    __dirname,
+    "../../packages/codex-api/dist/index.js",
+  ),
+  "@chresmus/unified-surface": path.resolve(
+    __dirname,
+    "../../packages/unified-surface/dist/index.js",
+  ),
+  "@chresmus/opencode-api": path.resolve(
+    __dirname,
+    "../../packages/opencode-api/dist/index.js",
+  ),
 };
 
 if (reactProfilingEnabled) {
@@ -73,8 +89,8 @@ export default defineConfig(({ command }) => {
         disable: !pwaEnabled,
         registerType: "autoUpdate",
         manifest: {
-          name: "Farfield",
-          short_name: "Farfield",
+          name: "Chresmus",
+          short_name: "Chresmus",
           start_url: "/",
           display: "standalone",
           theme_color: "#0a0a0b",

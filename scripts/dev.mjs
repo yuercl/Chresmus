@@ -82,10 +82,10 @@ function runBuild(filter) {
 const args = parseArgs(process.argv.slice(2));
 
 const buildFilters = [
-  "@farfield/protocol",
-  "@farfield/unified-surface",
-  "@farfield/api",
-  "@farfield/opencode-api"
+  "@chresmus/protocol",
+  "@chresmus/unified-surface",
+  "@chresmus/api",
+  "@chresmus/opencode-api"
 ];
 for (const filter of buildFilters) {
   const status = runBuild(filter);
@@ -100,7 +100,7 @@ if (args.agents.trim().length > 0) {
   serverArgs.push(`--agents=${args.agents.trim()}`);
 }
 
-const serverCommand = ["run", devScript, "--workspace", "@farfield/server"];
+const serverCommand = ["run", devScript, "--workspace", "@chresmus/server"];
 if (serverArgs.length > 0) {
   serverCommand.push("--", ...serverArgs);
 }
@@ -112,7 +112,7 @@ const serverProcess = spawn(npmBinary, serverCommand, {
 
 const webProcess = spawn(
   npmBinary,
-  ["run", devScript, "--workspace", "@farfield/web"],
+  ["run", devScript, "--workspace", "@chresmus/web"],
   {
     stdio: "inherit",
     env: process.env

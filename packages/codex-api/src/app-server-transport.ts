@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import { randomUUID } from "node:crypto";
-import type { AppServerClientRequestMethod } from "@farfield/protocol";
+import type { AppServerClientRequestMethod } from "@chresmus/protocol";
 import { z } from "zod";
 import {
   AppServerRpcError,
@@ -93,7 +93,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
         ...process.env,
         ...this.env,
         CODEX_USER_AGENT: this.userAgent,
-        CODEX_CLIENT_ID: `farfield-${randomUUID()}`
+        CODEX_CLIENT_ID: `chresmus-${randomUUID()}`
       },
       stdio: ["pipe", "pipe", "pipe"]
       }
@@ -243,7 +243,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
         "initialize",
         {
           clientInfo: {
-            name: "farfield",
+            name: "chresmus",
             version: "0.2.0"
           },
           capabilities: {
@@ -519,7 +519,7 @@ export class WebSocketAppServerTransport implements AppServerTransport {
         "initialize",
         {
           clientInfo: {
-            name: "farfield",
+            name: "chresmus",
             version: "0.2.0"
           },
           capabilities: {

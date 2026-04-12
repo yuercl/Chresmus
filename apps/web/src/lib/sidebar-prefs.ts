@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const STORAGE_PREFIX = "farfield.sidebar";
+const STORAGE_PREFIX = "chresmus.sidebar";
 
 const SidebarOrderSchema = z.array(z.string());
 const SidebarCollapseMapSchema = z.record(z.string(), z.boolean());

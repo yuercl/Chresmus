@@ -1,9 +1,9 @@
 {
-  "name": "@farfield/server",
+  "name": "@chresmus/server",
   "version": "0.2.2",
   "private": false,
   "type": "module",
-  "description": "Farfield server for Codex and OpenCode",
+  "description": "Chresmus server for Codex and OpenCode",
   "bin": "./dist/index.js",
   "files": [
     "dist"
@@ -28,10 +28,10 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@farfield/api": "workspace:*",
-    "@farfield/opencode-api": "workspace:*",
-    "@farfield/protocol": "workspace:*",
-    "@farfield/unified-surface": "workspace:*",
+    "@chresmus/api": "workspace:*",
+    "@chresmus/opencode-api": "workspace:*",
+    "@chresmus/protocol": "workspace:*",
+    "@chresmus/unified-surface": "workspace:*",
     "esbuild": "^0.25.10"
   }
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProtocolValidationError } from "@farfield/protocol";
+import { ProtocolValidationError } from "@chresmus/protocol";
 
 export const JsonRpcRequestSchema = z
   .object({

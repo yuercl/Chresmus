@@ -22,8 +22,8 @@ import {
   parseUserInputResponsePayload,
   type UserInputRequestId,
   type UserInputResponsePayload
-} from "@farfield/protocol";
-import { ProtocolValidationError } from "@farfield/protocol";
+} from "@chresmus/protocol";
+import { ProtocolValidationError } from "@chresmus/protocol";
 import { z } from "zod";
 import {
   AppServerTransport,

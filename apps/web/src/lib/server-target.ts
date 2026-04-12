@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-const STORAGE_KEY = "farfield.server-target.v2";
-const LEGACY_STORAGE_KEY = "farfield.server-target.v1";
+const STORAGE_KEY = "chresmus.server-target.v2";
+const LEGACY_STORAGE_KEY = "chresmus.server-target.v1";
 const DEFAULT_SERVER_PORT = 4311;
 
 const ServerProtocolSchema = z.enum(["http:", "https:"]);

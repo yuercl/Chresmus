@@ -4,7 +4,7 @@ import {
   AppServerTransportError,
   ChildProcessAppServerTransport,
   WebSocketAppServerTransport
-} from "@farfield/api";
+} from "@chresmus/api";
 import {
   parseCommandExecutionRequestApprovalResponse,
   parseFileChangeRequestApprovalResponse,
@@ -18,7 +18,7 @@ import {
   type ThreadConversationRequest,
   type ThreadConversationState,
   type UserInputRequestId
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 import { logger } from "../../logger.js";
 import type {
   AgentAdapter,

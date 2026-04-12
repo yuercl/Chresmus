@@ -225,7 +225,7 @@ describe("AppServerClient server requests", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "item-1",
-        command: "touch /tmp/farfield-approval-test",
+        command: "touch /tmp/chresmus-approval-test",
       },
     });
 
@@ -263,7 +263,7 @@ describe("AppServerClient server requests", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "item-1",
-        command: "touch /tmp/farfield-approval-test",
+        command: "touch /tmp/chresmus-approval-test",
       },
     });
 

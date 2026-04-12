@@ -4,7 +4,7 @@ import type {
   UnifiedFeatureAvailability,
   UnifiedItem,
   UnifiedThread,
-} from "@farfield/unified-surface";
+} from "@chresmus/unified-surface";
 import { App } from "../src/App";
 
 class MockEventSource {

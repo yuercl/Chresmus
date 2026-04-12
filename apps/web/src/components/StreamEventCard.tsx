@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { z } from "zod";
-import type { JsonValue } from "@farfield/unified-surface";
+import type { JsonValue } from "@chresmus/unified-surface";
 import { DiffBlock } from "@/components/DiffBlock";
 import { Button } from "@/components/ui/button";
 

@@ -7,11 +7,14 @@ import {
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
 import {
+  AppServerCollaborationModeListResponseSchema,
+  AppServerListModelsResponseSchema,
   AppServerThreadListItemSchema,
+  type ClientEventEnvelope,
   ThreadConversationStateSchema,
   parseThreadConversationState,
   type ThreadConversationState,
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 import { z } from "zod";
 import type {
   AgentAdapter,
@@ -24,6 +27,9 @@ import type {
   AgentReadThreadInput,
   AgentReadThreadResult,
   AgentSendMessageInput,
+  AgentSetCollaborationModeInput,
+  AgentThreadLiveState,
+  AgentThreadStreamEvents,
 } from "../types.js";
 
 const QwenJsonEventSchema = z.discriminatedUnion("type", [
@@ -74,6 +80,52 @@ interface RunningQwenProcess {
   interrupted: boolean;
 }
 
+const QWEN_OWNER_CLIENT_ID = "qwen-cli";
+const MAX_STREAM_EVENTS = 400;
+
+const QWEN_MODEL_OPTIONS = [
+  {
+    id: "coder-model",
+    displayName: "Qwen Coder Model",
+    description: "Current default Qwen Code model.",
+    isDefault: true,
+  },
+] as const;
+
+const QWEN_COLLABORATION_MODES = [
+  {
+    name: "Default",
+    mode: "default",
+    model: null,
+    reasoning_effort: null,
+    developer_instructions: null,
+  },
+  {
+    name: "Plan",
+    mode: "plan",
+    model: null,
+    reasoning_effort: null,
+    developer_instructions:
+      "Think through the implementation carefully before editing.",
+  },
+  {
+    name: "Auto Edit",
+    mode: "auto-edit",
+    model: null,
+    reasoning_effort: null,
+    developer_instructions:
+      "Automatically approve edit tools while still prompting for broader actions.",
+  },
+  {
+    name: "YOLO",
+    mode: "yolo",
+    model: null,
+    reasoning_effort: null,
+    developer_instructions:
+      "Automatically approve all actions for trusted sandboxes only.",
+  },
+] as const;
+
 export interface QwenCodeAgentOptions {
   executablePath: string;
   workspaceDir: string;
@@ -84,12 +136,12 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
   public readonly id = "qwen";
   public readonly label = "Qwen Code";
   public readonly capabilities: AgentCapabilities = {
-    canListModels: false,
-    canListCollaborationModes: false,
-    canSetCollaborationMode: false,
+    canListModels: true,
+    canListCollaborationModes: true,
+    canSetCollaborationMode: true,
     canSubmitUserInput: false,
-    canReadLiveState: false,
-    canReadStreamEvents: false,
+    canReadLiveState: true,
+    canReadStreamEvents: true,
     canReadRateLimits: false,
   };
 
@@ -98,6 +150,8 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
   private readonly approvalMode: string;
   private readonly storePath: string;
   private readonly threadById = new Map<string, ThreadConversationState>();
+  private readonly streamEventsByThreadId = new Map<string, ClientEventEnvelope[]>();
+  private readonly streamVersionByThreadId = new Map<string, number>();
   private readonly runningProcessByThreadId = new Map<string, RunningQwenProcess>();
   private connected = false;
   private lastError: string | null = null;
@@ -108,7 +162,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
     this.approvalMode = options.approvalMode ?? "yolo";
     this.storePath = path.join(
       this.workspaceDir,
-      ".farfield",
+      ".chresmus",
       "qwen-code-threads.json",
     );
   }
@@ -180,8 +234,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
       source: "qwen",
     });
 
-    this.threadById.set(threadId, thread);
-    this.persistStore();
+    this.setThread(thread);
 
     const threadListItem = AppServerThreadListItemSchema.parse(
       buildThreadListItem(thread),
@@ -202,6 +255,87 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
     return {
       thread: this.getThread(input.threadId),
     };
+  }
+
+  public async listModels(limit: number) {
+    this.ensureConnected();
+    return AppServerListModelsResponseSchema.parse({
+      data: QWEN_MODEL_OPTIONS.slice(0, Math.max(1, limit)).map((model) => ({
+        id: model.id,
+        model: model.id,
+        displayName: model.displayName,
+        description: model.description,
+        hidden: false,
+        isDefault: model.isDefault ?? false,
+        inputModalities: ["text"],
+        supportedReasoningEfforts: [
+          { reasoningEffort: "none", description: "Reasoning control unavailable" },
+        ],
+        defaultReasoningEffort: "none",
+        supportsPersonality: false,
+        upgrade: null,
+      })),
+      nextCursor: null,
+    });
+  }
+
+  public async listCollaborationModes() {
+    this.ensureConnected();
+    return AppServerCollaborationModeListResponseSchema.parse({
+      data: QWEN_COLLABORATION_MODES,
+    });
+  }
+
+  public async setCollaborationMode(
+    input: AgentSetCollaborationModeInput,
+  ): Promise<{ ownerClientId: string }> {
+    this.ensureConnected();
+    const thread = this.getThread(input.threadId);
+    const nextThread = parseThreadConversationState({
+      ...thread,
+      latestCollaborationMode: input.collaborationMode,
+      ...(input.collaborationMode.settings.model !== undefined
+        ? { latestModel: input.collaborationMode.settings.model }
+        : {}),
+    });
+    this.setThread(nextThread);
+    return {
+      ownerClientId: QWEN_OWNER_CLIENT_ID,
+    };
+  }
+
+  public async readLiveState(threadId: string): Promise<AgentThreadLiveState> {
+    this.ensureConnected();
+    return {
+      ownerClientId: QWEN_OWNER_CLIENT_ID,
+      conversationState: this.getThread(threadId),
+      liveStateError: null,
+    };
+  }
+
+  public async readStreamEvents(
+    threadId: string,
+    limit: number,
+  ): Promise<AgentThreadStreamEvents> {
+    this.ensureConnected();
+    const events = this.streamEventsByThreadId.get(threadId) ?? [];
+    return {
+      ownerClientId: QWEN_OWNER_CLIENT_ID,
+      events: events.slice(-Math.max(1, limit)),
+    };
+  }
+
+  public async listProjectDirectories(): Promise<string[]> {
+    this.ensureConnected();
+    const directories = new Set<string>([this.workspaceDir]);
+    for (const thread of this.threadById.values()) {
+      if (thread.cwd) {
+        directories.add(thread.cwd);
+      }
+    }
+    return Array.from(directories).filter((directory) =>
+      fs.existsSync(directory),
+    );
   }
 
   public async sendMessage(input: AgentSendMessageInput): Promise<void> {
@@ -279,15 +413,19 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
       source: "qwen",
     });
 
-    this.threadById.set(thread.id, updatedThread);
-    this.persistStore();
+    this.setThread(updatedThread);
 
     try {
+      const commandConfig = resolveQwenCommandConfig(
+        updatedThread,
+        this.approvalMode,
+      );
       const output = await this.runQwenCommand({
         threadId: thread.id,
         text,
         cwd,
-        model: thread.latestModel ?? null,
+        model: commandConfig.model,
+        approvalMode: commandConfig.approvalMode,
         hasPriorTurns: thread.turns.length > 0,
       });
       const completedAtMs = Date.now();
@@ -380,6 +518,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
     this.threadById.clear();
     for (const thread of parsed.threads) {
       this.threadById.set(thread.id, thread);
+      this.recordSnapshotEvent(thread);
     }
   }
 
@@ -407,6 +546,12 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
     return thread;
   }
 
+  private setThread(thread: ThreadConversationState): void {
+    this.threadById.set(thread.id, thread);
+    this.persistStore();
+    this.recordSnapshotEvent(thread);
+  }
+
   private updateThreadTurn(
     threadId: string,
     turnId: string,
@@ -422,8 +567,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
       ...thread,
       turns: nextTurns,
     });
-    this.threadById.set(threadId, nextThread);
-    this.persistStore();
+    this.setThread(nextThread);
   }
 
   private updateThreadMetadata(
@@ -439,8 +583,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
       updatedAt: input.updatedAt,
       ...(input.resumeState ? { resumeState: input.resumeState } : {}),
     });
-    this.threadById.set(threadId, nextThread);
-    this.persistStore();
+    this.setThread(nextThread);
   }
 
   private async runQwenCommand(input: {
@@ -448,6 +591,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
     text: string;
     cwd: string;
     model: string | null;
+    approvalMode: string;
     hasPriorTurns: boolean;
   }): Promise<{ sessionId: string; result: string }> {
     const args = [
@@ -456,7 +600,7 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
       "-o",
       "json",
       "--approval-mode",
-      this.approvalMode,
+      input.approvalMode,
       ...(input.hasPriorTurns
         ? ["--resume", input.threadId]
         : ["--session-id", input.threadId]),
@@ -536,6 +680,29 @@ export class QwenCodeAgentAdapter implements AgentAdapter {
       });
     });
   }
+
+  private recordSnapshotEvent(thread: ThreadConversationState): void {
+    const version = (this.streamVersionByThreadId.get(thread.id) ?? 0) + 1;
+    this.streamVersionByThreadId.set(thread.id, version);
+    const nextEvent: ClientEventEnvelope = {
+      type: "broadcast",
+      method: "thread-stream-state-changed",
+      sourceClientId: QWEN_OWNER_CLIENT_ID,
+      version,
+      params: {
+        type: "thread-stream-state-changed",
+        conversationId: thread.id,
+        version,
+        change: {
+          type: "snapshot",
+          conversationState: thread,
+        },
+      },
+    };
+    const existing = this.streamEventsByThreadId.get(thread.id) ?? [];
+    const nextEvents = [...existing, nextEvent].slice(-MAX_STREAM_EVENTS);
+    this.streamEventsByThreadId.set(thread.id, nextEvents);
+  }
 }
 
 function buildThreadListItem(
@@ -604,6 +771,27 @@ function summarizeText(text: string): string {
     return compact;
   }
   return `${compact.slice(0, 77).trimEnd()}...`;
+}
+
+function resolveQwenCommandConfig(
+  thread: ThreadConversationState,
+  defaultApprovalMode: string,
+): {
+  model: string | null;
+  approvalMode: string;
+} {
+  const collaborationMode = thread.latestCollaborationMode ?? null;
+  const approvalMode =
+    collaborationMode?.mode === "default"
+      ? "default"
+      : collaborationMode?.mode
+      ? collaborationMode.mode
+      : defaultApprovalMode;
+
+  return {
+    model: collaborationMode?.settings.model ?? thread.latestModel ?? null,
+    approvalMode,
+  };
 }
 
 function parseCursorOffset(cursor: string | null): number {

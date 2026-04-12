@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseThreadStreamEvent } from "@farfield/protocol";
+import { parseThreadStreamEvent } from "@chresmus/protocol";
 import { reduceThreadStreamEvents, ThreadStreamReductionError } from "../src/live-state.js";
 
 describe("live-state reducer", () => {

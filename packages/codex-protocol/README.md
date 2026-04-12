@@ -1,6 +1,6 @@
-# @farfield/protocol
+# @chresmus/protocol
 
-Strict schemas and types for Farfield's Codex protocol handling.
+Strict schemas and types for Chresmus's Codex protocol handling.
 
 ## Goals
 
@@ -53,8 +53,8 @@ All helpers throw `ProtocolValidationError` with issue paths.
 ## Development
 
 ```bash
-npm run build --workspace @farfield/protocol
-npm run test --workspace @farfield/protocol
+npm run build --workspace @chresmus/protocol
+npm run test --workspace @chresmus/protocol
 ```
 
 ## Generated App-Server Schemas

@@ -25,12 +25,12 @@ function runBuild(filter) {
 }
 
 const buildFilters = [
-  "@farfield/protocol",
-  "@farfield/unified-surface",
-  "@farfield/api",
-  "@farfield/opencode-api",
-  "@farfield/web",
-  "@farfield/server"
+  "@chresmus/protocol",
+  "@chresmus/unified-surface",
+  "@chresmus/api",
+  "@chresmus/opencode-api",
+  "@chresmus/web",
+  "@chresmus/server"
 ];
 
 for (const filter of buildFilters) {
@@ -42,7 +42,7 @@ for (const filter of buildFilters) {
 
 const serverProcess = spawn(
   npmBinary,
-  ["run", "start", "--workspace", "@farfield/server"],
+  ["run", "start", "--workspace", "@chresmus/server"],
   {
     stdio: "inherit",
     env: process.env
@@ -51,7 +51,7 @@ const serverProcess = spawn(
 
 const webProcess = spawn(
   npmBinary,
-  ["run", "start", "--workspace", "@farfield/web"],
+  ["run", "start", "--workspace", "@chresmus/web"],
   {
     stdio: "inherit",
     env: process.env

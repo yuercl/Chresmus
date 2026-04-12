@@ -2,7 +2,7 @@ import {
   assertNever,
   type ThreadConversationState,
   UserInputRequestSchema,
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 import {
   JsonValueSchema,
   UnifiedFeatureMatrixSchema,
@@ -20,7 +20,7 @@ import {
   type UnifiedProviderId,
   type UnifiedThread,
   type UnifiedThreadSummary,
-} from "@farfield/unified-surface";
+} from "@chresmus/unified-surface";
 import { z } from "zod";
 import type { AgentAdapter } from "../agents/types.js";
 
@@ -97,13 +97,13 @@ const PROVIDER_FEATURE_SUPPORT: Record<
     readThread: true,
     sendMessage: true,
     interrupt: true,
-    listModels: false,
-    listCollaborationModes: false,
-    setCollaborationMode: false,
+    listModels: true,
+    listCollaborationModes: true,
+    setCollaborationMode: true,
     submitUserInput: false,
-    readLiveState: false,
-    readStreamEvents: false,
-    listProjectDirectories: false,
+    readLiveState: true,
+    readStreamEvents: true,
+    listProjectDirectories: true,
   },
   qwen: {
     listThreads: true,
@@ -111,13 +111,13 @@ const PROVIDER_FEATURE_SUPPORT: Record<
     readThread: true,
     sendMessage: true,
     interrupt: true,
-    listModels: false,
-    listCollaborationModes: false,
-    setCollaborationMode: false,
+    listModels: true,
+    listCollaborationModes: true,
+    setCollaborationMode: true,
     submitUserInput: false,
-    readLiveState: false,
-    readStreamEvents: false,
-    listProjectDirectories: false,
+    readLiveState: true,
+    readStreamEvents: true,
+    listProjectDirectories: true,
   },
 };
 
@@ -279,7 +279,7 @@ function createHandlerTable(
         ...(command.approvalPolicy
           ? { approvalPolicy: command.approvalPolicy }
           : {}),
-        serviceName: "farfield",
+        serviceName: "chresmus",
         ...(typeof command.ephemeral === "boolean"
           ? { ephemeral: command.ephemeral }
           : {}),

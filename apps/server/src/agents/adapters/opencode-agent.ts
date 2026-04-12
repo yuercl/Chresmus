@@ -3,13 +3,13 @@ import path from "node:path";
 import {
   OpenCodeConnection,
   OpenCodeMonitorService,
-} from "@farfield/opencode-api";
+} from "@chresmus/opencode-api";
 import {
   AppServerCollaborationModeListResponseSchema,
   AppServerListModelsResponseSchema,
   AppServerThreadListItemSchema,
   parseThreadConversationState,
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 import type {
   AgentAdapter,
   AgentCapabilities,

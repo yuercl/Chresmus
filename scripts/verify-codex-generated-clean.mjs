@@ -59,7 +59,7 @@ function snapshotDirectory(directory) {
 function runGenerator() {
   const result = spawnSync(
     npmBinary,
-    ["run", "generate:app-server-zod", "--workspace", "@farfield/protocol"],
+    ["run", "generate:app-server-zod", "--workspace", "@chresmus/protocol"],
     {
       cwd: repoRoot,
       stdio: "inherit",

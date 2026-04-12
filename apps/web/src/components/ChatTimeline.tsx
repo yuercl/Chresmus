@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowDown } from "lucide-react";
-import type { UnifiedItem } from "@farfield/unified-surface";
+import type { UnifiedItem } from "@chresmus/unified-surface";
 import { ConversationItem } from "@/components/ConversationItem";
 import { Button } from "@/components/ui/button";
 

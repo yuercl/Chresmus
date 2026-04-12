@@ -89,7 +89,7 @@ import {
   type UnifiedFeatureAvailability,
   type UnifiedFeatureId,
   type UnifiedInputPart,
-} from "@farfield/unified-surface";
+} from "@chresmus/unified-surface";
 import { useTheme } from "@/hooks/useTheme";
 import { languageFromPath } from "@/lib/code-language";
 import { ChatTimeline, type ChatTimelineEntry } from "@/components/ChatTimeline";
@@ -5226,7 +5226,7 @@ export function App(): React.JSX.Element {
           className="pointer-events-none absolute inset-x-0 top-0 -bottom-3 bg-gradient-to-b from-sidebar from-58% via-sidebar/88 via-80% to-transparent to-100%"
         />
         <div className="relative z-10 flex items-center justify-between h-full">
-          <span className="text-sm font-semibold">Farfield</span>
+          <span className="text-sm font-semibold">Chresmus</span>
           <div className="flex items-center gap-1">
             {viewport === "desktop" && (
               <IconBtn
@@ -5728,7 +5728,7 @@ export function App(): React.JSX.Element {
             <Tooltip>
               <TooltipTrigger asChild>
                 <a
-                  href="https://github.com/achimala/farfield"
+                  href="https://github.com/yuercl/Chresmus"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="h-8 w-8 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
@@ -7261,7 +7261,7 @@ export function App(): React.JSX.Element {
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Saved Servers</Label>
                   <div className="text-xs text-muted-foreground">
-                    Aggregate thread lists from multiple Farfield servers.
+                    Aggregate thread lists from multiple Chresmus servers.
                   </div>
                   <div className="space-y-2">
                     {savedServerTargets.length === 0 ? (

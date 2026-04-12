@@ -3,7 +3,7 @@ import {
   parseThreadConversationState,
   type ThreadStreamPatch,
   type ThreadStreamEvent
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 
 function cloneState<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

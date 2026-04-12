@@ -6,7 +6,7 @@ import type {
   UnifiedFeatureId,
   UnifiedItem,
   UnifiedThread,
-} from "@farfield/unified-surface";
+} from "@chresmus/unified-surface";
 import { App } from "../src/App";
 
 class MockEventSource {
@@ -653,7 +653,7 @@ vi.stubGlobal(
 describe("App", () => {
   it("renders core sections", async () => {
     render(<App />);
-    expect((await screen.findAllByText("Farfield")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Chresmus")).length).toBeGreaterThan(0);
     expect(await screen.findByText("No thread selected")).toBeTruthy();
   });
 
@@ -993,7 +993,7 @@ describe("App", () => {
     };
 
     render(<App />);
-    await screen.findAllByText("Farfield");
+    await screen.findAllByText("Chresmus");
     expect(screen.queryByText("Plan")).toBeNull();
   });
 
@@ -1032,7 +1032,7 @@ describe("App", () => {
 
   it("keeps manual group order over automatic recency sort", async () => {
     localStorageBacking.set(
-      "farfield.sidebar.order.v1",
+      "chresmus.sidebar.order.v1",
       JSON.stringify(["project:/tmp/proj-b", "project:/tmp/proj-a"]),
     );
 

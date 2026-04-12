@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import type {
   AppServerSupportedServerNotification,
   ThreadConversationState,
-} from "@farfield/protocol";
+} from "@chresmus/protocol";
 import {
   JsonValueSchema,
   UnifiedCommandSchema,
@@ -17,7 +17,7 @@ import {
   type UnifiedProviderId,
   type UnifiedThread,
   type UnifiedTurn,
-} from "@farfield/unified-surface";
+} from "@chresmus/unified-surface";
 import {
   DirectoryCreateBodySchema,
   DirectoryReadQuerySchema,
@@ -55,7 +55,7 @@ import {
 const HOST = process.env["HOST"] ?? "127.0.0.1";
 const PORT = Number(process.env["PORT"] ?? 4311);
 const HISTORY_LIMIT = 2_000;
-const USER_AGENT = "farfield/0.2.2";
+const USER_AGENT = "chresmus/0.2.2";
 const SIDEBAR_PREVIEW_MAX_CHARS = 180;
 
 const TRACE_DIR = path.resolve(process.cwd(), "traces");
@@ -817,21 +817,20 @@ function printStartupBanner(): void {
   const lines = [
     "",
     rule,
-    paint("Farfield Server", "green", { bold: true }),
+    paint("Chresmus Server", "green", { bold: true }),
     paint(`Local URL: http://${HOST}:${PORT}`, "cyan", { bold: true }),
-    paint("Open this now: https://farfield.app", "blue", {
+    paint("Open a Chresmus frontend and connect it to this server.", "blue", {
       bold: true,
-      underline: true,
     }),
     paint(`Agents: ${configuredAgentIds.join(", ")}`, "dim"),
     "",
     paint("Remote access (recommended):", "yellow", { bold: true }),
     "1. Keep this server private. Do not expose it to the public internet.",
     "2. Put it behind a VPN, such as Tailscale.",
-    "3. In farfield.app, open Settings and set your server URL.",
+    "3. In the Chresmus frontend, open Settings and set your server URL.",
     "",
     paint("Setup guide:", "cyan", { bold: true }),
-    paint("https://github.com/achimala/farfield#readme", "blue", {
+    paint("https://github.com/yuercl/Chresmus#readme", "blue", {
       underline: true,
     }),
     "",
@@ -2108,7 +2107,7 @@ server.on("connection", (socket) => {
 async function start(): Promise<void> {
   ensureTraceDirectory();
 
-  pushSystem("Starting Farfield monitor server", {
+  pushSystem("Starting Chresmus monitor server", {
     appExecutable: codexExecutable,
     agentIds: configuredAgentIds,
   });
@@ -2222,7 +2221,7 @@ async function handleShutdownSignal(signal: "SIGINT" | "SIGTERM"): Promise<void>
   }
 
   shutdownRequested = true;
-  process.stdout.write("\nStopping Farfield server...\n");
+  process.stdout.write("\nStopping Chresmus server...\n");
 
   forcedExitTimer = setTimeout(() => {
     process.stderr.write("Shutdown is taking too long. Exiting now.\n");

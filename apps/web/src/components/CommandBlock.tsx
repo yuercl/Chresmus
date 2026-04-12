@@ -11,7 +11,7 @@ import {
   FileText,
   FileSearch,
 } from "lucide-react";
-import type { UnifiedItem } from "@farfield/unified-surface";
+import type { UnifiedItem } from "@chresmus/unified-surface";
 import { Button } from "@/components/ui/button";
 import { summarizeCommandForHeader } from "@/lib/command-action-ui";
 import { CodeSnippet } from "./CodeSnippet";

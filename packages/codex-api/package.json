@@ -1,5 +1,5 @@
 {
-  "name": "@farfield/api",
+  "name": "@chresmus/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,8 +16,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@farfield/protocol": "workspace:*",
-    "@farfield/unified-surface": "workspace:*",
+    "@chresmus/protocol": "workspace:*",
+    "@chresmus/unified-surface": "workspace:*",
     "zod": "^3.24.1"
   }
 }

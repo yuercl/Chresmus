@@ -5,8 +5,8 @@ import {
   type UnifiedCommand,
   type UnifiedCommandKind,
   type UnifiedProviderId,
-} from "@farfield/unified-surface";
-import type { ThreadConversationState } from "@farfield/protocol";
+} from "@chresmus/unified-surface";
+import type { ThreadConversationState } from "@chresmus/protocol";
 import {
   AgentUnifiedProviderAdapter,
   FEATURE_ID_BY_COMMAND_KIND,
