@@ -1,8 +1,44 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const npmBinary = process.platform === "win32" ? "npm.cmd" : "npm";
+
+function runBuild(filter) {
+  const result = spawnSync(
+    npmBinary,
+    ["run", "build", "--workspace", filter],
+    {
+      stdio: "inherit",
+      env: process.env
+    }
+  );
+
+  if (typeof result.status === "number") {
+    return result.status;
+  }
+
+  if (result.error) {
+    process.stderr.write(`${String(result.error)}\n`);
+  }
+  return 1;
+}
+
+const buildFilters = [
+  "@farfield/protocol",
+  "@farfield/unified-surface",
+  "@farfield/api",
+  "@farfield/opencode-api",
+  "@farfield/web",
+  "@farfield/server"
+];
+
+for (const filter of buildFilters) {
+  const status = runBuild(filter);
+  if (status !== 0) {
+    process.exit(status);
+  }
+}
 
 const serverProcess = spawn(
   npmBinary,
