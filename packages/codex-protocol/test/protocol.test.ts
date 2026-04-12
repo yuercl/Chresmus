@@ -828,6 +828,39 @@ describe("codex-protocol schemas", () => {
     expect(parsed.turns[0]?.items[0]?.type).toBe("forkedFromConversation");
   });
 
+  it("parses thread conversation state with subagent source metadata", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [],
+      requests: [],
+      agentNickname: "claude-worker",
+      agentRole: "reviewer",
+      source: {
+        subagent: {
+          thread_spawn: {
+            parent_thread_id: "thread-parent",
+            depth: 1,
+            agent_nickname: "claude-worker",
+            agent_role: "reviewer",
+          },
+        },
+      },
+    });
+
+    expect(parsed.agentNickname).toBe("claude-worker");
+    expect(parsed.agentRole).toBe("reviewer");
+    expect(parsed.source).toEqual({
+      subagent: {
+        thread_spawn: {
+          parent_thread_id: "thread-parent",
+          depth: 1,
+          agent_nickname: "claude-worker",
+          agent_role: "reviewer",
+        },
+      },
+    });
+  });
+
   it("parses generic client event request envelopes", () => {
     const parsed = parseClientEventEnvelope({
       type: "request",

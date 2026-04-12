@@ -16,6 +16,41 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 export const UnifiedProviderIdSchema = z.enum(["codex", "opencode", "claude", "qwen"]);
 export type UnifiedProviderId = z.infer<typeof UnifiedProviderIdSchema>;
 
+const UnifiedThreadSpawnSourceSchema = z
+  .object({
+    thread_spawn: z
+      .object({
+        parent_thread_id: NonEmptyStringSchema,
+        depth: NonNegativeIntSchema,
+        agent_nickname: NullableStringSchema.default(null),
+        agent_role: NullableStringSchema.default(null)
+      })
+      .strict()
+  })
+  .strict();
+
+const UnifiedSubAgentSourceSchema = z.union([
+  z.literal("review"),
+  z.literal("compact"),
+  UnifiedThreadSpawnSourceSchema,
+  z.literal("memory_consolidation"),
+  z.object({ other: z.string() }).strict()
+]);
+
+export const UnifiedThreadSourceSchema = z.union([
+  z.literal("cli"),
+  z.literal("vscode"),
+  z.literal("exec"),
+  z.literal("mcp"),
+  z.literal("codex"),
+  z.literal("opencode"),
+  z.literal("claude"),
+  z.literal("qwen"),
+  z.object({ subagent: UnifiedSubAgentSourceSchema }).strict(),
+  z.literal("unknown")
+]);
+export type UnifiedThreadSource = z.infer<typeof UnifiedThreadSourceSchema>;
+
 export const UNIFIED_FEATURE_IDS = [
   "listThreads",
   "createThread",
@@ -854,7 +889,9 @@ export const UnifiedThreadSchema = z
     latestReasoningEffort: NullableStringSchema,
     latestTokenUsageInfo: z.union([JsonValueSchema, z.null()]).optional(),
     cwd: z.string().optional(),
-    source: z.string().optional()
+    agentNickname: NullableStringSchema.optional(),
+    agentRole: NullableStringSchema.optional(),
+    source: UnifiedThreadSourceSchema.optional()
   })
   .strict();
 export type UnifiedThread = z.infer<typeof UnifiedThreadSchema>;
@@ -871,7 +908,9 @@ export const UnifiedThreadSummarySchema = z
     createdAt: NonNegativeIntSchema,
     updatedAt: NonNegativeIntSchema,
     cwd: z.string().optional(),
-    source: z.string().optional()
+    agentNickname: NullableStringSchema.optional(),
+    agentRole: NullableStringSchema.optional(),
+    source: UnifiedThreadSourceSchema.optional()
   })
   .strict();
 export type UnifiedThreadSummary = z.infer<typeof UnifiedThreadSummarySchema>;

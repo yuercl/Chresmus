@@ -16,6 +16,7 @@ import {
   type JsonValue,
   type UnifiedProviderId,
   type UnifiedThread,
+  type UnifiedThreadSummary,
   type UnifiedTurn,
 } from "@chresmus/unified-surface";
 import {
@@ -1609,17 +1610,7 @@ const server = http.createServer(async (req, res) => {
       const maxPages = parseInteger(url.searchParams.get("maxPages"), 20);
       const cursor = url.searchParams.get("cursor") ?? null;
 
-      const data: Array<{
-        id: string;
-        provider: UnifiedProviderId;
-        preview: string;
-        title?: string | null | undefined;
-        isGenerating?: boolean | undefined;
-        createdAt: number;
-        updatedAt: number;
-        cwd?: string | undefined;
-        source?: string | undefined;
-      }> = [];
+      const data: UnifiedThreadSummary[] = [];
       const cursors: Record<UnifiedProviderId, string | null> = {
         codex: null,
         opencode: null,
@@ -1703,17 +1694,7 @@ const server = http.createServer(async (req, res) => {
       const maxPages = parseInteger(url.searchParams.get("maxPages"), 20);
       const cursor = url.searchParams.get("cursor") ?? null;
 
-      const rows: Array<{
-        id: string;
-        provider: UnifiedProviderId;
-        preview: string;
-        title?: string | null | undefined;
-        isGenerating?: boolean | undefined;
-        createdAt: number;
-        updatedAt: number;
-        cwd?: string | undefined;
-        source?: string | undefined;
-      }> = [];
+      const rows: UnifiedThreadSummary[] = [];
       const errors: Record<
         UnifiedProviderId,
         {

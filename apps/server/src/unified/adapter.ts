@@ -588,7 +588,12 @@ function mapThreadSummary(
     createdAt: number;
     updatedAt: number;
     cwd?: string | undefined;
-    source?: string | undefined;
+    agentNickname?: string | null | undefined;
+    agentRole?: string | null | undefined;
+    source?:
+      | UnifiedThreadSummary["source"]
+      | UnifiedThread["source"]
+      | undefined;
   },
 ): UnifiedThreadSummary {
   const waitingState = parseThreadWaitingState(thread.status);
@@ -609,6 +614,12 @@ function mapThreadSummary(
     ...(waitingOnApproval !== undefined ? { waitingOnApproval } : {}),
     ...(waitingOnUserInput !== undefined ? { waitingOnUserInput } : {}),
     ...(thread.cwd ? { cwd: thread.cwd } : {}),
+    ...(thread["agentNickname"] !== undefined
+      ? { agentNickname: thread["agentNickname"] }
+      : {}),
+    ...(thread["agentRole"] !== undefined
+      ? { agentRole: thread["agentRole"] }
+      : {}),
     ...(thread.source ? { source: thread.source } : {}),
   };
 }
@@ -722,6 +733,10 @@ export function mapThread(
         }
       : {}),
     ...(thread.cwd ? { cwd: thread.cwd } : {}),
+    ...(thread.agentNickname !== undefined
+      ? { agentNickname: thread.agentNickname }
+      : {}),
+    ...(thread.agentRole !== undefined ? { agentRole: thread.agentRole } : {}),
     ...(thread.source ? { source: thread.source } : {}),
   };
 }

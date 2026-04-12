@@ -24,6 +24,18 @@ const SAMPLE_THREAD: ThreadConversationState = {
   title: "Thread",
   latestModel: null,
   latestReasoningEffort: null,
+  agentNickname: "claude-worker",
+  agentRole: "reviewer",
+  source: {
+    subagent: {
+      thread_spawn: {
+        parent_thread_id: "thread-parent",
+        depth: 1,
+        agent_nickname: "claude-worker",
+        agent_role: "reviewer",
+      },
+    },
+  },
 };
 
 const SAMPLE_THREAD_LIST_ITEM = {
@@ -32,7 +44,18 @@ const SAMPLE_THREAD_LIST_ITEM = {
   title: "Named Thread",
   createdAt: 1700000000,
   updatedAt: 1700000100,
-  source: "codex",
+  agentNickname: "claude-worker",
+  agentRole: "reviewer",
+  source: {
+    subagent: {
+      thread_spawn: {
+        parent_thread_id: "thread-parent",
+        depth: 1,
+        agent_nickname: "claude-worker",
+        agent_role: "reviewer",
+      },
+    },
+  },
 };
 
 const CODEx_CAPABILITIES: AgentCapabilities = {
@@ -363,9 +386,13 @@ describe("unified provider adapters", () => {
         expect(codexResult.kind).toBe(kind);
         if (codexResult.kind === "listThreads") {
           expect(codexResult.data[0]?.title).toBe("Named Thread");
+          expect(codexResult.data[0]?.agentNickname).toBe("claude-worker");
         }
         if (codexResult.kind === "createThread") {
           expect(codexResult.model).toBe("gpt-5.3-codex");
+        }
+        if (codexResult.kind === "readThread") {
+          expect(codexResult.thread.agentRole).toBe("reviewer");
         }
       } else {
         await expect(

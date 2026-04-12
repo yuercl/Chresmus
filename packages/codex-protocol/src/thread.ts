@@ -30,6 +30,40 @@ export const CollaborationModeSchema = z
   })
   .passthrough();
 
+export const ThreadSpawnSourceSchema = z
+  .object({
+    thread_spawn: z
+      .object({
+        parent_thread_id: NonEmptyStringSchema,
+        depth: NonNegativeIntSchema,
+        agent_nickname: z.union([z.string(), z.null()]).default(null),
+        agent_role: z.union([z.string(), z.null()]).default(null)
+      })
+      .strict()
+  })
+  .strict();
+
+export const SubAgentSourceSchema = z.union([
+  z.literal("review"),
+  z.literal("compact"),
+  ThreadSpawnSourceSchema,
+  z.literal("memory_consolidation"),
+  z.object({ other: z.string() }).strict()
+]);
+
+export const SessionSourceSchema = z.union([
+  z.literal("cli"),
+  z.literal("vscode"),
+  z.literal("exec"),
+  z.literal("mcp"),
+  z.literal("codex"),
+  z.literal("opencode"),
+  z.literal("claude"),
+  z.literal("qwen"),
+  z.object({ subagent: SubAgentSourceSchema }).strict(),
+  z.literal("unknown")
+]);
+
 export const InputTextPartSchema = z
   .object({
     type: z.literal("text"),
@@ -475,7 +509,9 @@ export const ThreadConversationStateSchema = z
     gitInfo: z.union([JsonValueSchema, z.null()]).optional(),
     resumeState: z.string().optional(),
     latestTokenUsageInfo: JsonValueSchema.optional(),
-    source: z.string().optional()
+    agentNickname: NullableStringSchema.optional(),
+    agentRole: NullableStringSchema.optional(),
+    source: SessionSourceSchema.optional()
   })
   .passthrough();
 

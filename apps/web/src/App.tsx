@@ -440,6 +440,8 @@ function parseTokenUsageInfo(
 }
 
 function buildThreadSignature(thread: Thread): string {
+  const serializedSource =
+    thread.source === undefined ? "" : JSON.stringify(thread.source);
   return [
     thread.serverId,
     thread.id,
@@ -453,7 +455,9 @@ function buildThreadSignature(thread: Thread): string {
     thread.provider,
     thread.serverBaseUrl,
     thread.cwd ?? "",
-    thread.source ?? "",
+    thread.agentNickname ?? "",
+    thread.agentRole ?? "",
+    serializedSource,
   ].join("|");
 }
 

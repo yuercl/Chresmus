@@ -11,7 +11,7 @@ function printHelp() {
       "",
       "Flags:",
       "  --remote                      Bind server and web to 0.0.0.0",
-      "  --agents=<ids>                Comma-separated list: codex, opencode, all",
+      "  --agents=<ids>                Comma-separated list: codex, opencode, claude, qwen, all",
       "  --help                        Show this help message"
     ].join("\n")
   );
