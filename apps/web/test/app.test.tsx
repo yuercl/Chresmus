@@ -108,7 +108,7 @@ const FEATURE_IDS: UnifiedFeatureId[] = [
   "listProjectDirectories",
 ];
 
-type ProviderId = "codex" | "opencode";
+type ProviderId = "codex" | "opencode" | "claude" | "qwen";
 
 type CapabilityFixture = {
   canListModels: boolean;
@@ -121,6 +121,34 @@ type CapabilityFixture = {
 };
 
 type FeatureSet = Record<UnifiedFeatureId, UnifiedFeatureAvailability>;
+
+function buildEmptyThreadListCursors(): {
+  codex: null;
+  opencode: null;
+  claude: null;
+  qwen: null;
+} {
+  return {
+    codex: null,
+    opencode: null,
+    claude: null,
+    qwen: null,
+  };
+}
+
+function buildEmptyThreadListErrors(): {
+  codex: null;
+  opencode: null;
+  claude: null;
+  qwen: null;
+} {
+  return {
+    codex: null,
+    opencode: null,
+    claude: null,
+    qwen: null,
+  };
+}
 
 const codexCapabilities: CapabilityFixture = {
   canListModels: true,
@@ -268,10 +296,14 @@ let threadsFixture: {
   cursors: {
     codex: string | null;
     opencode: string | null;
+    claude: string | null;
+    qwen: string | null;
   };
   errors: {
     codex: null;
     opencode: null;
+    claude: null;
+    qwen: null;
   };
 };
 
@@ -434,25 +466,29 @@ beforeEach(() => {
         enabled: false,
         connected: false,
       }),
+      claude: buildFeatureSet(codexCapabilities, {
+        enabled: false,
+        connected: false,
+      }),
+      qwen: buildFeatureSet(codexCapabilities, {
+        enabled: false,
+        connected: false,
+      }),
     },
   };
 
   projectDirectoriesFixture = {
     codex: ["/tmp/project"],
     opencode: [],
+    claude: [],
+    qwen: [],
   };
 
   threadsFixture = {
     ok: true,
     data: [],
-    cursors: {
-      codex: null,
-      opencode: null,
-    },
-    errors: {
-      codex: null,
-      opencode: null,
-    },
+    cursors: buildEmptyThreadListCursors(),
+    errors: buildEmptyThreadListErrors(),
   };
 
   collaborationModesFixture = {
@@ -473,6 +509,8 @@ beforeEach(() => {
       },
     ],
     opencode: [],
+    claude: [],
+    qwen: [],
   };
 
   modelsFixture = {
@@ -488,6 +526,8 @@ beforeEach(() => {
       },
     ],
     opencode: [],
+    claude: [],
+    qwen: [],
   };
 
   readThreadResolver = (_threadId: string, _provider: ProviderId | null) =>
@@ -673,14 +713,8 @@ describe("App", () => {
           waitingOnUserInput: true,
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     render(<App />);
@@ -737,14 +771,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -800,14 +828,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -857,14 +879,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (
@@ -931,14 +947,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (
@@ -989,6 +999,14 @@ describe("App", () => {
           enabled: true,
           connected: true,
         }),
+        claude: buildFeatureSet(codexCapabilities, {
+          enabled: false,
+          connected: false,
+        }),
+        qwen: buildFeatureSet(codexCapabilities, {
+          enabled: false,
+          connected: false,
+        }),
       },
     };
 
@@ -1016,14 +1034,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     render(<App />);
@@ -1058,14 +1070,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     render(<App />);
@@ -1093,14 +1099,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     render(<App />);
@@ -1132,14 +1132,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     render(<App />);
@@ -1184,14 +1178,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     modelsFixture = {
@@ -1216,6 +1204,8 @@ describe("App", () => {
         },
       ],
       opencode: [],
+      claude: [],
+      qwen: [],
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1279,14 +1269,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1355,14 +1339,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1423,14 +1401,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1488,14 +1460,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1594,14 +1560,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1686,14 +1646,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1748,14 +1702,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1828,14 +1776,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1901,14 +1843,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -1981,14 +1917,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     collaborationModesFixture = {
@@ -2002,6 +1932,8 @@ describe("App", () => {
         },
       ],
       opencode: [],
+      claude: [],
+      qwen: [],
     };
 
     modelsFixture = {
@@ -2023,6 +1955,8 @@ describe("App", () => {
         },
       ],
       opencode: [],
+      claude: [],
+      qwen: [],
     };
 
     readThreadResolver = (targetThreadId: string) => ({
@@ -2069,14 +2003,8 @@ describe("App", () => {
           source: "codex",
         },
       ],
-      cursors: {
-        codex: null,
-        opencode: null,
-      },
-      errors: {
-        codex: null,
-        opencode: null,
-      },
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
     };
 
     collaborationModesFixture = {
@@ -2090,6 +2018,8 @@ describe("App", () => {
         },
       ],
       opencode: [],
+      claude: [],
+      qwen: [],
     };
 
     modelsFixture = {
@@ -2111,6 +2041,8 @@ describe("App", () => {
         },
       ],
       opencode: [],
+      claude: [],
+      qwen: [],
     };
 
     readThreadResolver = (targetThreadId: string) => ({

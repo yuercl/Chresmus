@@ -139,7 +139,8 @@ async function writeSchemaModule(target) {
   const dereferenced = await RefParser.dereference(target.source);
   const generated = jsonSchemaToZod(dereferenced, {
     name: target.exportName,
-    module: "esm"
+    module: "esm",
+    zodVersion: 3
   });
 
   const withHeader = [

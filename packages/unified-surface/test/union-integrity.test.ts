@@ -35,11 +35,15 @@ describe("unified surface unions", () => {
   it("validates feature matrix shape", () => {
     const parsed = UnifiedFeatureMatrixSchema.parse({
       codex: {},
-      opencode: {}
+      opencode: {},
+      claude: {},
+      qwen: {},
     });
 
     expect(parsed.codex).toEqual({});
     expect(parsed.opencode).toEqual({});
+    expect(parsed.claude).toEqual({});
+    expect(parsed.qwen).toEqual({});
     expect(UNIFIED_FEATURE_IDS.length).toBeGreaterThan(0);
   });
 });

@@ -1,5 +1,5 @@
 // GENERATED FILE. DO NOT EDIT.
-// Source: packages/opencode-api/node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts
+// Source: node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts
 
 export const OPENCODE_EVENT_TYPES = [
   "command.executed",

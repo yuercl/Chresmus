@@ -15,7 +15,7 @@ class MockEventSource {
   public close(): void {}
 }
 
-type ProviderId = "codex" | "opencode";
+type ProviderId = "codex" | "opencode" | "claude" | "qwen";
 
 interface ThreadSummary {
   id: string;
@@ -244,6 +244,8 @@ vi.stubGlobal(
         features: {
           codex: buildFeatureSet(),
           opencode: buildFeatureSet(),
+          claude: buildFeatureSet(),
+          qwen: buildFeatureSet(),
         },
       });
     }
@@ -252,8 +254,8 @@ vi.stubGlobal(
       return jsonResponse({
         ok: true,
         data: threadsFixture,
-        cursors: { codex: null, opencode: null },
-        errors: { codex: null, opencode: null },
+        cursors: { codex: null, opencode: null, claude: null, qwen: null },
+        errors: { codex: null, opencode: null, claude: null, qwen: null },
       });
     }
 
@@ -261,7 +263,7 @@ vi.stubGlobal(
       return jsonResponse({
         ok: true,
         rows: threadsFixture,
-        errors: { codex: null, opencode: null },
+        errors: { codex: null, opencode: null, claude: null, qwen: null },
       });
     }
 
