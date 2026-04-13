@@ -697,6 +697,259 @@ describe("App", () => {
     expect(await screen.findByText("No thread selected")).toBeTruthy();
   });
 
+  it("uses local colored assets for provider icons", async () => {
+    featureMatrixFixture.features.claude = buildFeatureSet(codexCapabilities, {
+      enabled: true,
+      connected: true,
+    });
+    featureMatrixFixture.features.qwen = buildFeatureSet(codexCapabilities, {
+      enabled: true,
+      connected: true,
+    });
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: "thread-codex-icon",
+          provider: "codex",
+          preview: "codex icon thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000001,
+          cwd: "/tmp/project",
+          source: "codex",
+        },
+        {
+          id: "thread-claude-icon",
+          provider: "claude",
+          preview: "claude icon thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "claude",
+        },
+        {
+          id: "thread-qwen-icon",
+          provider: "qwen",
+          preview: "qwen icon thread",
+          createdAt: 1700000000,
+          updatedAt: 1699999999,
+          cwd: "/tmp/project",
+          source: "qwen",
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    render(<App />);
+
+    const codexIcons = await screen.findAllByAltText("Codex");
+    expect(codexIcons.length).toBeGreaterThan(0);
+    for (const codexIcon of codexIcons) {
+      expect(codexIcon.getAttribute("src")).toBe("/agent-icons/codex.png");
+    }
+
+    const claudeIcons = await screen.findAllByAltText("Claude Code");
+    expect(claudeIcons.length).toBeGreaterThan(0);
+    for (const claudeIcon of claudeIcons) {
+      expect(claudeIcon.getAttribute("src")).toBe("/agent-icons/claude.png");
+    }
+
+    const qwenIcons = await screen.findAllByAltText("Qwen Code");
+    expect(qwenIcons.length).toBeGreaterThan(0);
+    for (const qwenIcon of qwenIcons) {
+      expect(qwenIcon.getAttribute("src")).toBe("/agent-icons/qwen.png");
+    }
+  });
+
+  it("reloads provider-specific models when switching between provider threads", async () => {
+    featureMatrixFixture.features.claude = buildFeatureSet(codexCapabilities, {
+      enabled: true,
+      connected: true,
+    });
+    featureMatrixFixture.features.qwen = buildFeatureSet(codexCapabilities, {
+      enabled: true,
+      connected: true,
+    });
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: "thread-codex-models",
+          provider: "codex",
+          preview: "codex thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000003,
+          cwd: "/tmp/project",
+          source: "codex",
+        },
+        {
+          id: "thread-claude-models",
+          provider: "claude",
+          preview: "claude thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000002,
+          cwd: "/tmp/project",
+          source: "claude",
+        },
+        {
+          id: "thread-qwen-models",
+          provider: "qwen",
+          preview: "qwen thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000001,
+          cwd: "/tmp/project",
+          source: "qwen",
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    collaborationModesFixture = {
+      codex: [
+        {
+          name: "Default",
+          mode: "default",
+          model: null,
+          reasoningEffort: "medium",
+          developerInstructions: null,
+        },
+      ],
+      opencode: [],
+      claude: [
+        {
+          name: "Default",
+          mode: "default",
+          model: null,
+          reasoningEffort: "medium",
+          developerInstructions: null,
+        },
+      ],
+      qwen: [
+        {
+          name: "Default",
+          mode: "default",
+          model: null,
+          reasoningEffort: "medium",
+          developerInstructions: null,
+        },
+      ],
+    };
+
+    modelsFixture = {
+      codex: [
+        {
+          id: "gpt-5.3-codex",
+          displayName: "gpt-5.3-codex",
+          description: "Codex model",
+          defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: ["medium"],
+          hidden: false,
+          isDefault: true,
+        },
+      ],
+      opencode: [],
+      claude: [
+        {
+          id: "default",
+          displayName: "Claude Default",
+          description: "Claude default model",
+          defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: ["medium"],
+          hidden: false,
+          isDefault: true,
+        },
+      ],
+      qwen: [
+        {
+          id: "coder-model",
+          displayName: "Qwen Coder Model",
+          description: "Qwen coder model",
+          defaultReasoningEffort: "medium",
+          supportedReasoningEfforts: ["medium"],
+          hidden: false,
+          isDefault: true,
+        },
+      ],
+    };
+
+    readThreadResolver = (threadId: string, provider: ProviderId | null) => {
+      const resolvedProvider = provider ?? "codex";
+      const modelId =
+        resolvedProvider === "claude"
+          ? "default"
+          : resolvedProvider === "qwen"
+            ? "coder-model"
+            : "gpt-5.3-codex";
+      return {
+        ok: true,
+        thread: buildConversationStateFixture(threadId, modelId, {
+          provider: resolvedProvider,
+        }),
+      };
+    };
+
+    liveStateResolver = (threadId: string, provider: ProviderId) => {
+      const modelId =
+        provider === "claude"
+          ? "default"
+          : provider === "qwen"
+            ? "coder-model"
+            : "gpt-5.3-codex";
+      return {
+        kind: "readLiveState",
+        threadId,
+        ownerClientId: "client-1",
+        conversationState: buildConversationStateFixture(threadId, modelId, {
+          provider,
+        }),
+        liveStateError: null,
+      };
+    };
+
+    const listModelProviders = (): ProviderId[] =>
+      vi
+        .mocked(fetch)
+        .mock.calls.flatMap((call) => {
+          const [requestUrl, requestInit] = call;
+          if (typeof requestUrl !== "string") {
+            return [];
+          }
+          if (!requestUrl.endsWith("/api/unified/command")) {
+            return [];
+          }
+          if (typeof requestInit?.body !== "string") {
+            return [];
+          }
+          const parsed = JSON.parse(requestInit.body) as {
+            kind?: string;
+            provider?: ProviderId;
+          };
+          if (parsed.kind !== "listModels" || !parsed.provider) {
+            return [];
+          }
+          return [parsed.provider];
+        });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(listModelProviders()).toContain("codex");
+    });
+
+    fireEvent.click(await screen.findByText("claude thread"));
+    await waitFor(() => {
+      expect(listModelProviders()).toContain("claude");
+    });
+
+    fireEvent.click(await screen.findByText("qwen thread"));
+    await waitFor(() => {
+      expect(listModelProviders()).toContain("qwen");
+    });
+  });
+
   it("shows waiting indicators in the sidebar from thread summaries", async () => {
     threadsFixture = {
       ok: true,

@@ -11,6 +11,7 @@ interface FileChange {
 
 interface DiffBlockProps {
   changes: FileChange[];
+  layout?: "traditional" | "split";
 }
 
 type LineType = "add" | "remove" | "header" | "context" | "empty";
@@ -241,7 +242,10 @@ const GUTTER_CHAR: Record<LineType, string> = {
   empty: " ",
 };
 
-function DiffBlockComponent({ changes }: DiffBlockProps) {
+function DiffBlockComponent({
+  changes,
+  layout = "traditional",
+}: DiffBlockProps) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(
     changes.length === 1 || (changes.length > 0 && changes[0]?.diff == null)
       ? 0
@@ -268,7 +272,6 @@ function DiffBlockComponent({ changes }: DiffBlockProps) {
         const fileName = change.path.split("/").pop() ?? change.path;
         const dirPath = change.path.slice(0, change.path.lastIndexOf("/"));
         const unifiedLines = change.diff ? parseUnifiedDiff(change.diff) : [];
-        const sideBySideRows = change.diff ? parseSideBySideDiff(change.diff) : [];
         const added = unifiedLines.filter((line) => line.type === "add").length;
         const removed = unifiedLines.filter((line) => line.type === "remove").length;
         const { Icon, label, cls } = kindMeta(change.kind.type);
@@ -323,88 +326,11 @@ function DiffBlockComponent({ changes }: DiffBlockProps) {
                 >
                   <div className="border-t border-border overflow-x-auto">
                     {change.diff ? (
-                      <>
-                        <div className="sm:hidden">
-                          {unifiedLines.map((line, j) => (
-                            <div
-                              key={j}
-                              className={`flex font-mono text-xs leading-5 ${LINE_STYLES[line.type]}`}
-                            >
-                              <span
-                                className={`select-none w-6 text-center text-[10px] shrink-0 pt-px ${GUTTER_STYLES[line.type]}`}
-                              >
-                                {GUTTER_CHAR[line.type]}
-                              </span>
-                              <span
-                                className={`flex-1 px-2 py-0.5 whitespace-pre-wrap break-all ${TEXT_STYLES[line.type]}`}
-                              >
-                                {line.content}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="hidden sm:block">
-                          <div className="grid grid-cols-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground">
-                            <div className="border-r border-border px-3 py-2">Before</div>
-                            <div className="px-3 py-2">After</div>
-                          </div>
-                          {sideBySideRows.map((row, j) => {
-                            if (row.kind === "meta") {
-                              return (
-                                <div
-                                  key={j}
-                                  className="border-b border-border/60 bg-muted/30 px-3 py-1.5 font-mono text-[11px] italic text-muted-foreground"
-                                >
-                                  {row.content}
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <div
-                                key={j}
-                                className="grid grid-cols-2 border-b border-border/50"
-                              >
-                                <div
-                                  className={`grid min-w-0 grid-cols-[3rem_1.5rem_minmax(0,1fr)] border-r border-border px-2 py-0.5 font-mono text-xs leading-5 ${LINE_STYLES[row.left.type]}`}
-                                >
-                                  <span className="select-none pr-2 text-right text-[10px] text-muted-foreground/60">
-                                    {row.left.lineNumber ?? ""}
-                                  </span>
-                                  <span
-                                    className={`select-none text-center text-[10px] ${GUTTER_STYLES[row.left.type]}`}
-                                  >
-                                    {GUTTER_CHAR[row.left.type]}
-                                  </span>
-                                  <span
-                                    className={`min-w-0 whitespace-pre-wrap break-all ${TEXT_STYLES[row.left.type]}`}
-                                  >
-                                    {row.left.content}
-                                  </span>
-                                </div>
-                                <div
-                                  className={`grid min-w-0 grid-cols-[3rem_1.5rem_minmax(0,1fr)] px-2 py-0.5 font-mono text-xs leading-5 ${LINE_STYLES[row.right.type]}`}
-                                >
-                                  <span className="select-none pr-2 text-right text-[10px] text-muted-foreground/60">
-                                    {row.right.lineNumber ?? ""}
-                                  </span>
-                                  <span
-                                    className={`select-none text-center text-[10px] ${GUTTER_STYLES[row.right.type]}`}
-                                  >
-                                    {GUTTER_CHAR[row.right.type]}
-                                  </span>
-                                  <span
-                                    className={`min-w-0 whitespace-pre-wrap break-all ${TEXT_STYLES[row.right.type]}`}
-                                  >
-                                    {row.right.content}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
+                      layout === "split" ? (
+                        <SplitDiffView raw={change.diff} />
+                      ) : (
+                        <TraditionalDiffView lines={unifiedLines} />
+                      )
                     ) : (
                       <div className="px-3 py-2 text-xs text-muted-foreground">
                         No diff available
@@ -418,6 +344,106 @@ function DiffBlockComponent({ changes }: DiffBlockProps) {
         );
       })}
     </div>
+  );
+}
+
+function TraditionalDiffView({
+  lines,
+}: {
+  lines: UnifiedDiffLine[];
+}): React.JSX.Element {
+  return (
+    <>
+      {lines.map((line, index) => (
+        <div
+          key={`${line.type}-${index}`}
+          className={`flex font-mono text-xs leading-5 ${LINE_STYLES[line.type]}`}
+        >
+          <span
+            className={`select-none w-6 text-center text-[10px] shrink-0 pt-px ${GUTTER_STYLES[line.type]}`}
+          >
+            {GUTTER_CHAR[line.type]}
+          </span>
+          <span
+            className={`flex-1 px-2 py-0.5 whitespace-pre-wrap break-all ${TEXT_STYLES[line.type]}`}
+          >
+            {line.content}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SplitDiffView({ raw }: { raw: string }): React.JSX.Element {
+  const sideBySideRows = parseSideBySideDiff(raw);
+  return (
+    <>
+      <div className="sm:hidden">
+        <TraditionalDiffView lines={parseUnifiedDiff(raw)} />
+      </div>
+
+      <div className="hidden sm:block">
+        <div className="grid grid-cols-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground">
+          <div className="border-r border-border px-3 py-2">Before</div>
+          <div className="px-3 py-2">After</div>
+        </div>
+        {sideBySideRows.map((row, index) => {
+          if (row.kind === "meta") {
+            return (
+              <div
+                key={`meta-${index}`}
+                className="border-b border-border/60 bg-muted/30 px-3 py-1.5 font-mono text-[11px] italic text-muted-foreground"
+              >
+                {row.content}
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={`pair-${index}`}
+              className="grid grid-cols-2 border-b border-border/50"
+            >
+              <div
+                className={`grid min-w-0 grid-cols-[3rem_1.5rem_minmax(0,1fr)] border-r border-border px-2 py-0.5 font-mono text-xs leading-5 ${LINE_STYLES[row.left.type]}`}
+              >
+                <span className="select-none pr-2 text-right text-[10px] text-muted-foreground/60">
+                  {row.left.lineNumber ?? ""}
+                </span>
+                <span
+                  className={`select-none text-center text-[10px] ${GUTTER_STYLES[row.left.type]}`}
+                >
+                  {GUTTER_CHAR[row.left.type]}
+                </span>
+                <span
+                  className={`min-w-0 whitespace-pre-wrap break-all ${TEXT_STYLES[row.left.type]}`}
+                >
+                  {row.left.content}
+                </span>
+              </div>
+              <div
+                className={`grid min-w-0 grid-cols-[3rem_1.5rem_minmax(0,1fr)] px-2 py-0.5 font-mono text-xs leading-5 ${LINE_STYLES[row.right.type]}`}
+              >
+                <span className="select-none pr-2 text-right text-[10px] text-muted-foreground/60">
+                  {row.right.lineNumber ?? ""}
+                </span>
+                <span
+                  className={`select-none text-center text-[10px] ${GUTTER_STYLES[row.right.type]}`}
+                >
+                  {GUTTER_CHAR[row.right.type]}
+                </span>
+                <span
+                  className={`min-w-0 whitespace-pre-wrap break-all ${TEXT_STYLES[row.right.type]}`}
+                >
+                  {row.right.content}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

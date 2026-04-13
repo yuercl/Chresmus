@@ -782,11 +782,23 @@ const DEBUG_UI_ENABLED = import.meta.env.MODE !== "production";
 const MOBILE_SIDEBAR_WIDTH_PX = 256;
 const MOBILE_SWIPE_EDGE_PX = 24;
 const MOBILE_SIDEBAR_TOGGLE_THRESHOLD_PX = 88;
+const ASSUMED_DEFAULT_MODEL_BY_AGENT: Record<AgentId, string> = {
+  codex: "gpt-5.3-codex",
+  opencode: "",
+  claude: "default",
+  qwen: "coder-model",
+};
+const ASSUMED_DEFAULT_MODEL_LABEL_BY_AGENT: Record<AgentId, string> = {
+  codex: "gpt-5.3-codex",
+  opencode: "Default",
+  claude: "Claude Default (default)",
+  qwen: "Qwen Coder Model (coder-model)",
+};
 const AGENT_FAVICON_BY_ID: Record<AgentId, string> = {
-  codex: "https://openai.com/favicon.ico",
+  codex: "/agent-icons/codex.png",
   opencode: "/agent-icons/opencode.svg",
-  claude: "/agent-icons/claude.svg",
-  qwen: "/agent-icons/qwen.svg",
+  claude: "/agent-icons/claude.png",
+  qwen: "/agent-icons/qwen.png",
 };
 
 let appViewSnapshotCache: AppViewSnapshot | null = null;
@@ -798,6 +810,14 @@ function agentFavicon(agentId: AgentId | null | undefined): string | null {
     return null;
   }
   return AGENT_FAVICON_BY_ID[agentId] ?? null;
+}
+
+function assumedDefaultModelIdForAgent(agentId: AgentId): string {
+  return ASSUMED_DEFAULT_MODEL_BY_AGENT[agentId];
+}
+
+function assumedDefaultModelLabelForAgent(agentId: AgentId): string {
+  return ASSUMED_DEFAULT_MODEL_LABEL_BY_AGENT[agentId];
 }
 
 function compareEffortOptions(left: string, right: string): number {
@@ -2394,6 +2414,10 @@ export function App(): React.JSX.Element {
     () => resolvedSelectedThreadProvider ?? selectedAgentId,
     [resolvedSelectedThreadProvider, selectedAgentId],
   );
+  const activeCatalogProviderId = activeThreadAgentId;
+  const activeCatalogBaseUrl =
+    selectedThreadServerBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl;
+  const activeCatalogCacheKey = `${activeCatalogBaseUrl}|${activeCatalogProviderId}`;
   const hasResolvedSelectedThreadProvider =
     !selectedThreadId || resolvedSelectedThreadProvider !== null;
   const activeAgentDescriptor = useMemo(
@@ -2463,13 +2487,15 @@ export function App(): React.JSX.Element {
     () => sortedModels.find((entry) => !entry.hidden) ?? sortedModels[0] ?? null,
     [sortedModels],
   );
-  const appDefaultModelId = preferredModel?.id ?? ASSUMED_APP_DEFAULT_MODEL;
+  const appDefaultModelId =
+    preferredModel?.id ?? assumedDefaultModelIdForAgent(activeThreadAgentId);
   const appDefaultModelLabel = preferredModel
     ? preferredModel.displayName && preferredModel.displayName !== preferredModel.id
       ? `${preferredModel.displayName} (${preferredModel.id})`
       : preferredModel.displayName || preferredModel.id
-    : ASSUMED_APP_DEFAULT_MODEL;
-  const preferredNewThreadModelId = selectedModelId || appDefaultModelId;
+    : assumedDefaultModelLabelForAgent(activeThreadAgentId);
+  const preferredNewThreadModelId =
+    selectedModelId || assumedDefaultModelIdForAgent(selectedAgentId);
   const appDefaultEffortLabel = useMemo(() => {
     const activeModeKey = selectedModeKey || defaultModeOption?.mode || "";
     const modeDefaultEffort = normalizeNullableModeValue(
@@ -2783,8 +2809,6 @@ export function App(): React.JSX.Element {
     loadCoreRequestIdRef.current = requestId;
     const shouldLoadDebugData = activeTabRef.current === "debug";
     const now = Date.now();
-    const activeCatalogBaseUrl =
-      selectedThreadServerBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl;
     const cachedAgents = agentCacheRef.current;
     const shouldLoadAgents =
       !cachedAgents ||
@@ -2995,7 +3019,7 @@ export function App(): React.JSX.Element {
         (thread) => thread.id === selectedThreadIdRef.current,
       ) ?? null;
     const activeProviderId =
-      threadForActiveProvider?.provider ?? selectedAgentId;
+      threadForActiveProvider?.provider ?? activeCatalogProviderId;
     const activeProviderBaseUrl =
       threadForActiveProvider?.serverBaseUrl ?? activeCatalogBaseUrl;
     const activeProviderCacheKey = `${activeProviderBaseUrl}|${activeProviderId}`;
@@ -3230,11 +3254,10 @@ export function App(): React.JSX.Element {
       });
     });
   }, [
+    activeCatalogBaseUrl,
+    activeCatalogProviderId,
     agentDescriptors,
-    primaryServerTarget?.baseUrl,
     selectedAgentId,
-    selectedThreadServerBaseUrl,
-    serverBaseUrl,
     serverTargets,
   ]);
 
@@ -3658,6 +3681,28 @@ export function App(): React.JSX.Element {
   }, [loadCoreData]);
 
   useEffect(() => {
+    const cachedCatalog =
+      providerCatalogCacheRef.current.get(activeCatalogCacheKey) ?? null;
+    const nextModes = cachedCatalog?.modes ?? [];
+    const nextModels = cachedCatalog?.models ?? [];
+    const nextModesSignature = nextModes.map((mode) =>
+      [mode.mode, mode.name, mode.reasoningEffort ?? ""].join("|"),
+    );
+    const nextModelsSignature = nextModels.map((model) =>
+      [model.id, model.displayName ?? ""].join("|"),
+    );
+
+    if (!signaturesMatch(modesSignatureRef.current, nextModesSignature)) {
+      modesSignatureRef.current = nextModesSignature;
+      setModes(nextModes);
+    }
+    if (!signaturesMatch(modelsSignatureRef.current, nextModelsSignature)) {
+      modelsSignatureRef.current = nextModelsSignature;
+      setModels(nextModels);
+    }
+  }, [activeCatalogCacheKey]);
+
+  useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
@@ -3708,7 +3753,7 @@ export function App(): React.JSX.Element {
       return;
     }
     void loadCore().catch((error) => setError(toErrorMessage(error)));
-  }, [selectedAgentId]);
+  }, [activeCatalogCacheKey, selectedAgentId, selectedThreadId]);
 
   useEffect(() => {
     const refreshCoreData = () => {
@@ -6119,8 +6164,8 @@ export function App(): React.JSX.Element {
             {topNavTabs && (
               <div className="hidden md:block shrink-0 border-b border-border px-3 py-2">
                 <div className="overflow-visible py-1">
-                  <div className="overflow-x-auto">
-                    <div className="flex w-max items-center gap-1 px-1">{topNavTabs}</div>
+                  <div className="overflow-x-auto px-1 py-0.5">
+                    <div className="flex w-max items-center gap-1">{topNavTabs}</div>
                   </div>
                 </div>
               </div>
@@ -6560,6 +6605,7 @@ export function App(): React.JSX.Element {
                           workspaceSelectedMode === "diff" ? (
                             workspaceGitDiff?.diff ? (
                               <DiffBlock
+                                layout="split"
                                 changes={[
                                   {
                                     path: workspaceSelectedPath,
@@ -6795,6 +6841,7 @@ export function App(): React.JSX.Element {
                             workspaceSelectedMode === "diff" ? (
                               workspaceGitDiff?.diff ? (
                                 <DiffBlock
+                                  layout="split"
                                   changes={[
                                     {
                                       path: workspaceSelectedPath,
