@@ -2,6 +2,8 @@
 
 Unified local UI for coding-agent threads.
 
+[中文文档](./README.zh-CN.md)
+
 Chresmus gives you one web interface to browse conversations, switch models and collaboration modes, inspect workspaces, handle approvals, and monitor agent activity across multiple local coding agents.
 
 Currently supports:
@@ -10,12 +12,6 @@ Currently supports:
 - [Claude Code](https://www.anthropic.com/claude-code)
 - [Qwen Code](https://github.com/QwenLM/qwen-code)
 - [OpenCode](https://opencode.ai)
-
-Built by [@anshuchimala](https://x.com/anshuchimala).
-
-This is an independent project and is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, Alibaba/Qwen, or the OpenCode team.
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/achimalap)
 
 <img src="./screenshot.png" alt="Chresmus screenshot" width="500" />
 
