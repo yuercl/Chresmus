@@ -78,18 +78,18 @@ Run the frontend locally from this repo, or deploy `apps/web` yourself. Then ope
 Install dependencies and start the backend:
 
 ```bash
-npm install
-npm run server
+pnpm install
+pnpm run server
 ```
 
-`npm run server` runs the backend on `0.0.0.0:4311`.
+`pnpm run server` runs the backend on `0.0.0.0:4311`.
 
 Select providers explicitly if needed:
 
 ```bash
-npm run server -- --agents=opencode
-npm run server -- --agents=codex,claude,qwen
-npm run server -- --agents=all
+pnpm run server -- --agents=opencode
+pnpm run server -- --agents=codex,claude,qwen
+pnpm run server -- --agents=all
 ```
 
 If you are using Codex CLI only, start Codex app-server first:
@@ -99,7 +99,7 @@ If you are using Codex CLI only, start Codex app-server first:
 codex app-server --listen ws://127.0.0.1:4320
 
 # terminal 2
-CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npm run server
+CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 pnpm run server
 ```
 
 > Warning: this exposes the Chresmus server on your network. Use only on trusted networks.
@@ -109,8 +109,8 @@ CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npm run server
 Use this when working on Chresmus itself, or when running frontend and backend together:
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 This opens the frontend at `http://localhost:4312`.
@@ -118,11 +118,11 @@ This opens the frontend at `http://localhost:4312`.
 Useful variants:
 
 ```bash
-npm run dev -- --agents=opencode
-npm run dev -- --agents=codex,claude,qwen
-npm run dev -- --agents=all
-npm run dev:remote
-npm run dev:remote -- --agents=opencode
+pnpm run dev -- --agents=opencode
+pnpm run dev -- --agents=codex,claude,qwen
+pnpm run dev -- --agents=all
+pnpm run dev:remote
+pnpm run dev:remote -- --agents=opencode
 ```
 
 If you are developing against Codex app-server:
@@ -132,13 +132,13 @@ If you are developing against Codex app-server:
 codex app-server --listen ws://127.0.0.1:4320
 
 # terminal 2
-CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npm run dev
+CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 pnpm run dev
 ```
 
 For network-exposed local development:
 
 ```bash
-CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npm run dev:remote
+CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 pnpm run dev:remote
 ```
 
 > Warning: `dev:remote` exposes Chresmus without authentication. Use only on trusted networks.
@@ -148,8 +148,8 @@ CODEX_APP_SERVER_URL=ws://127.0.0.1:4320 npm run dev:remote
 Build once and run in production mode:
 
 ```bash
-npm run build
-npm run start
+pnpm run build
+pnpm run start
 ```
 
 Open `http://127.0.0.1:4312`.
@@ -162,7 +162,7 @@ Default bindings:
 If you need a custom backend origin for API proxying:
 
 ```bash
-CHRESMUS_API_ORIGIN=http://127.0.0.1:4311 npm run start
+CHRESMUS_API_ORIGIN=http://127.0.0.1:4311 pnpm run start
 ```
 
 ## Build Options
@@ -176,31 +176,31 @@ Examples:
 
 ```bash
 # default production build
-npm run build --workspace @chresmus/web
+pnpm --filter @chresmus/web build
 
 # compiler disabled
-REACT_COMPILER=0 npm run build --workspace @chresmus/web
+REACT_COMPILER=0 pnpm --filter @chresmus/web build
 
 # profiling build
-REACT_PROFILING=1 npm run build --workspace @chresmus/web
+REACT_PROFILING=1 pnpm --filter @chresmus/web build
 
 # profiling build with compiler disabled
-REACT_PROFILING=1 REACT_COMPILER=0 npm run build --workspace @chresmus/web
+REACT_PROFILING=1 REACT_COMPILER=0 pnpm --filter @chresmus/web build
 ```
 
 Compare two frontend builds side-by-side against one backend:
 
 ```bash
 # backend
-npm run start --workspace @chresmus/server
+pnpm --filter @chresmus/server start
 
 # baseline UI
-REACT_PROFILING=1 REACT_COMPILER=0 npm run build --workspace @chresmus/web -- --outDir dist-baseline
-npm run preview --workspace @chresmus/web -- --host 127.0.0.1 --port 4312 --strictPort --outDir dist-baseline
+REACT_PROFILING=1 REACT_COMPILER=0 pnpm --filter @chresmus/web build -- --outDir dist-baseline
+pnpm --filter @chresmus/web preview -- --host 127.0.0.1 --port 4312 --strictPort --outDir dist-baseline
 
 # compiler UI
-REACT_PROFILING=1 npm run build --workspace @chresmus/web -- --outDir dist-compiler
-npm run preview --workspace @chresmus/web -- --host 127.0.0.1 --port 4313 --strictPort --outDir dist-compiler
+REACT_PROFILING=1 pnpm --filter @chresmus/web build -- --outDir dist-compiler
+pnpm --filter @chresmus/web preview -- --host 127.0.0.1 --port 4313 --strictPort --outDir dist-compiler
 ```
 
 ## Mobile App (iOS / Android) via Tauri 2.0
@@ -224,40 +224,40 @@ No agent binaries run on the device.
 ### First-time setup
 
 ```bash
-npm install
+pnpm install
 
 # Generate app icons from the source SVG
-npm run icon --workspace @chresmus/tauri
+pnpm --filter @chresmus/tauri icon
 
 # Initialise the iOS Xcode project (creates src-tauri/gen/apple/)
-npm run ios:init
+pnpm run ios:init
 
 # Initialise the Android Gradle project (creates src-tauri/gen/android/)
-npm run android:init
+pnpm run android:init
 ```
 
 ### Building
 
 ```bash
 # Build iOS IPA
-npm run ios:build
+pnpm run ios:build
 # Output: apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
 
 # Build Android APK
-npm run android:build
+pnpm run android:build
 # Output: apps/tauri/src-tauri/gen/android/app/build/outputs/apk/
 ```
 
 Shorthand from the repo root:
 
 ```bash
-npm run ios:build
-npm run android:build
+pnpm run ios:build
+pnpm run android:build
 ```
 
 ### Installing on iOS with Sideloadly
 
-1. Build the IPA with `npm run ios:build`.
+1. Build the IPA with `pnpm run ios:build`.
 2. Open Sideloadly and drag the `.ipa` file onto it.
 3. Enter your Apple ID and follow the prompts.
 4. Trust the developer certificate on the device (Settings → General → VPN & Device Management).
@@ -274,7 +274,7 @@ http://192.168.1.x:4311
 Make sure the server is started in network-exposed mode:
 
 ```bash
-HOST=0.0.0.0 PORT=4311 npm run dev --workspace @chresmus/server
+HOST=0.0.0.0 PORT=4311 pnpm --filter @chresmus/server dev
 ```
 
 ## Requirements
@@ -300,7 +300,7 @@ Recommended setup:
 Start the server:
 
 ```bash
-HOST=0.0.0.0 PORT=4311 npm run dev --workspace @chresmus/server
+HOST=0.0.0.0 PORT=4311 pnpm --filter @chresmus/server dev
 ```
 
 Quick health check:

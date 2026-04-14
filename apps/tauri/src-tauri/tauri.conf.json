@@ -7,7 +7,7 @@
     "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:4312",
     "beforeDevCommand": "",
-    "beforeBuildCommand": "cd ../.. && npm run build:tauri --workspace @chresmus/web"
+    "beforeBuildCommand": "cd ../.. && pnpm --filter @chresmus/web build:tauri"
   },
   "app": {
     "windows": [

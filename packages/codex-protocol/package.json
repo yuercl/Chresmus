@@ -20,7 +20,10 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/node": "^24.3.0",
     "@apidevtools/json-schema-ref-parser": "^11.9.3",
-    "json-schema-to-zod": "^2.7.0"
+    "json-schema-to-zod": "^2.7.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }

@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
 const targetRoot = path.join(repoRoot, "packages", "codex-protocol", "src", "generated", "app-server");
-const npmBinary = process.platform === "win32" ? "npm.cmd" : "npm";
+const packageManagerBinary = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function listFiles(directory) {
   if (!fs.existsSync(directory)) {
@@ -58,8 +58,8 @@ function snapshotDirectory(directory) {
 
 function runGenerator() {
   const result = spawnSync(
-    npmBinary,
-    ["run", "generate:app-server-zod", "--workspace", "@chresmus/protocol"],
+    packageManagerBinary,
+    ["--filter", "@chresmus/protocol", "generate:app-server-zod"],
     {
       cwd: repoRoot,
       stdio: "inherit",

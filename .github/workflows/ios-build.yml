@@ -1,0 +1,77 @@
+name: ios-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - ".github/workflows/ios-build.yml"
+      - "apps/tauri/**"
+      - "apps/web/**"
+      - "apps/server/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "scripts/**"
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Generate Tauri icons
+        run: pnpm --filter @chresmus/tauri icon
+
+      - name: Initialize iOS project
+        run: pnpm --filter @chresmus/tauri ios:init
+
+      - name: Build iOS IPA
+        run: pnpm --filter @chresmus/tauri ios:build -- --export-method development
+
+      - name: Upload iOS artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-artifacts
+          path: |
+            apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
+            apps/tauri/src-tauri/gen/apple/build/**/*.xcarchive
+            apps/tauri/src-tauri/gen/apple/project/**/*.xcodeproj
+            apps/tauri/src-tauri/gen/apple/project/**/*.xcworkspace
+          if-no-files-found: warn

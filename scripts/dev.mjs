@@ -2,12 +2,12 @@
 
 import { spawn, spawnSync } from "node:child_process";
 
-const npmBinary = process.platform === "win32" ? "npm.cmd" : "npm";
+const packageManagerBinary = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function printHelp() {
   process.stdout.write(
     [
-      "Usage: npm run dev -- [--remote] [--agents=<ids>]",
+      "Usage: pnpm run dev -- [--remote] [--agents=<ids>]",
       "",
       "Flags:",
       "  --remote                      Bind server and web to 0.0.0.0",
@@ -61,8 +61,8 @@ function parseArgs(argv) {
 
 function runBuild(filter) {
   const result = spawnSync(
-    npmBinary,
-    ["run", "build", "--workspace", filter],
+    packageManagerBinary,
+    ["--filter", filter, "build"],
     {
       stdio: "inherit",
       env: process.env
@@ -100,19 +100,19 @@ if (args.agents.trim().length > 0) {
   serverArgs.push(`--agents=${args.agents.trim()}`);
 }
 
-const serverCommand = ["run", devScript, "--workspace", "@chresmus/server"];
+const serverCommand = ["--filter", "@chresmus/server", devScript];
 if (serverArgs.length > 0) {
   serverCommand.push("--", ...serverArgs);
 }
 
-const serverProcess = spawn(npmBinary, serverCommand, {
+const serverProcess = spawn(packageManagerBinary, serverCommand, {
   stdio: "inherit",
   env: process.env
 });
 
 const webProcess = spawn(
-  npmBinary,
-  ["run", devScript, "--workspace", "@chresmus/web"],
+  packageManagerBinary,
+  ["--filter", "@chresmus/web", devScript],
   {
     stdio: "inherit",
     env: process.env

@@ -53,8 +53,8 @@ All helpers throw `ProtocolValidationError` with issue paths.
 ## Development
 
 ```bash
-npm run build --workspace @chresmus/protocol
-npm run test --workspace @chresmus/protocol
+pnpm --filter @chresmus/protocol build
+pnpm --filter @chresmus/protocol test
 ```
 
 ## Generated App-Server Schemas
@@ -64,7 +64,7 @@ The app-server schemas in this package are generated from the official Codex app
 From repo root:
 
 ```bash
-npm run generate:codex-schema
+pnpm run generate:codex-schema
 ```
 
 This regenerates:

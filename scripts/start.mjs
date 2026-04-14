@@ -2,12 +2,12 @@
 
 import { spawn, spawnSync } from "node:child_process";
 
-const npmBinary = process.platform === "win32" ? "npm.cmd" : "npm";
+const packageManagerBinary = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function runBuild(filter) {
   const result = spawnSync(
-    npmBinary,
-    ["run", "build", "--workspace", filter],
+    packageManagerBinary,
+    ["--filter", filter, "build"],
     {
       stdio: "inherit",
       env: process.env
@@ -41,8 +41,8 @@ for (const filter of buildFilters) {
 }
 
 const serverProcess = spawn(
-  npmBinary,
-  ["run", "start", "--workspace", "@chresmus/server"],
+  packageManagerBinary,
+  ["--filter", "@chresmus/server", "start"],
   {
     stdio: "inherit",
     env: process.env
@@ -50,8 +50,8 @@ const serverProcess = spawn(
 );
 
 const webProcess = spawn(
-  npmBinary,
-  ["run", "start", "--workspace", "@chresmus/web"],
+  packageManagerBinary,
+  ["--filter", "@chresmus/web", "start"],
   {
     stdio: "inherit",
     env: process.env

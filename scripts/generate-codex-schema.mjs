@@ -16,7 +16,7 @@ const defaultOutDir = path.join(
 function printHelp() {
   process.stdout.write(
     [
-      "Usage: npm run generate:codex-schema -- [--out <dir>] [--codex <path>]",
+      "Usage: pnpm run generate:codex-schema -- [--out <dir>] [--codex <path>]",
       "",
       "Options:",
       "  --out <dir>      Output directory",
@@ -138,8 +138,8 @@ function readCodexVersion(codexExecutable) {
 }
 
 function runWorkspaceScript(script, cwd) {
-  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
-  const result = spawnSync(npmExecutable, ["run", script], {
+  const packageManagerExecutable = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const result = spawnSync(packageManagerExecutable, [script], {
     cwd,
     stdio: "inherit",
     env: process.env
