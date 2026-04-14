@@ -5,6 +5,10 @@ dist
 coverage
 *.tsbuildinfo
 
+# Tauri
+apps/tauri/src-tauri/target/
+apps/tauri/src-tauri/gen/
+
 # Local traces and extracted desktop artifacts
 traces/
 index-DEdUduNg.js

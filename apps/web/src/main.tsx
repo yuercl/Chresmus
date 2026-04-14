@@ -10,7 +10,15 @@ if (stored === "dark" || (!stored && prefersDark)) {
   document.documentElement.classList.add("dark");
 }
 
-registerSW({ immediate: true });
+// Skip service worker registration inside Tauri (desktop/mobile).
+// Tauri uses its own update mechanism; a SW would conflict.
+const isTauri =
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+
+if (!isTauri) {
+  registerSW({ immediate: true });
+}
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -8,6 +8,18 @@ Chresmus now routes both providers through one strict unified surface.
 - Web UI consumes unified schemas and does not import provider SDK/protocol types.
 - Feature gating comes from typed unified feature availability, not provider-specific conditionals in UI logic.
 
+## Mobile (Tauri 2.0)
+
+`apps/tauri` is an npm workspace that wraps the web frontend as a native iOS/Android app via Tauri 2.0.
+
+- `apps/tauri/src-tauri/` — Rust backend (minimal; no agent logic).
+- `apps/tauri/src-tauri/tauri.conf.json` — points `frontendDist` at `apps/web/dist`.
+- `apps/tauri/src-tauri/capabilities/default.json` — grants `core:default` and `shell:allow-open`; CSP allows `connect-src http: https:` so the WebView can reach any user-configured server.
+- `apps/web/src/main.tsx` — detects `window.__TAURI_INTERNALS__` and skips PWA service-worker registration inside Tauri.
+- `apps/web/package.json` `build:tauri` script — builds with `PWA_ENABLED=0` (no service worker injected).
+
+The mobile app is a thin client. Agents run on the desktop server; the phone only renders the UI and makes HTTP/SSE requests to the configured server address.
+
 ### Unified Endpoints
 
 - `POST /api/unified/command`

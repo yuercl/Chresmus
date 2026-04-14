@@ -203,11 +203,86 @@ REACT_PROFILING=1 npm run build --workspace @chresmus/web -- --outDir dist-compi
 npm run preview --workspace @chresmus/web -- --host 127.0.0.1 --port 4313 --strictPort --outDir dist-compiler
 ```
 
+## Mobile App (iOS / Android) via Tauri 2.0
+
+Chresmus ships a Tauri 2.0 wrapper (`apps/tauri`) that packages the web UI as a native iOS or Android app.
+The mobile app is a thin client — it connects to a Chresmus server running on your machine.
+No agent binaries run on the device.
+
+### Prerequisites — iOS (macOS only)
+
+- macOS with Xcode 15+
+- Rust iOS target: `rustup target add aarch64-apple-ios`
+- Apple Developer account (free account works for sideloading)
+- [Sideloadly](https://sideloadly.io/) or AltStore to install the IPA
+
+### Prerequisites — Android
+
+- Android SDK + NDK
+- Rust Android target: `rustup target add aarch64-linux-android`
+
+### First-time setup
+
+```bash
+npm install
+
+# Generate app icons from the source SVG
+npm run icon --workspace @chresmus/tauri
+
+# Initialise the iOS Xcode project (creates src-tauri/gen/apple/)
+npm run ios:init
+
+# Initialise the Android Gradle project (creates src-tauri/gen/android/)
+npm run android:init
+```
+
+### Building
+
+```bash
+# Build iOS IPA
+npm run ios:build
+# Output: apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
+
+# Build Android APK
+npm run android:build
+# Output: apps/tauri/src-tauri/gen/android/app/build/outputs/apk/
+```
+
+Shorthand from the repo root:
+
+```bash
+npm run ios:build
+npm run android:build
+```
+
+### Installing on iOS with Sideloadly
+
+1. Build the IPA with `npm run ios:build`.
+2. Open Sideloadly and drag the `.ipa` file onto it.
+3. Enter your Apple ID and follow the prompts.
+4. Trust the developer certificate on the device (Settings → General → VPN & Device Management).
+
+### Connecting to your server from the mobile app
+
+On first launch the app cannot reach `127.0.0.1` (that's your phone, not your Mac).
+Open Settings in the app and enter the address of your Chresmus server, for example:
+
+```
+http://192.168.1.x:4311
+```
+
+Make sure the server is started in network-exposed mode:
+
+```bash
+HOST=0.0.0.0 PORT=4311 npm run dev --workspace @chresmus/server
+```
+
 ## Requirements
 
 - Node.js 20+
 - At least one supported agent installed locally
 - For Codex app-server mode: `codex` available locally
+- For mobile builds: Rust + platform toolchain (see Mobile section above)
 
 Useful Codex environment variables:
 

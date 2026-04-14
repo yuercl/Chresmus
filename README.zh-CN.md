@@ -203,11 +203,85 @@ REACT_PROFILING=1 npm run build --workspace @chresmus/web -- --outDir dist-compi
 npm run preview --workspace @chresmus/web -- --host 127.0.0.1 --port 4313 --strictPort --outDir dist-compiler
 ```
 
+## 移动端应用（iOS / Android）via Tauri 2.0
+
+Chresmus 提供了一个 Tauri 2.0 封装（`apps/tauri`），可以将 Web UI 打包成原生 iOS 或 Android 应用。
+移动端应用作为瘦客户端运行——它连接到你电脑上运行的 Chresmus 服务端，设备本身不运行任何 agent。
+
+### 前置条件 — iOS（仅限 macOS）
+
+- macOS + Xcode 15+
+- Rust iOS 编译目标：`rustup target add aarch64-apple-ios`
+- Apple 开发者账号（免费账号即可用于侧载安装）
+- [Sideloadly](https://sideloadly.io/) 或 AltStore（用于安装 IPA）
+
+### 前置条件 — Android
+
+- Android SDK + NDK
+- Rust Android 编译目标：`rustup target add aarch64-linux-android`
+
+### 首次初始化
+
+```bash
+npm install
+
+# 从源 SVG 生成所有尺寸的应用图标
+npm run icon --workspace @chresmus/tauri
+
+# 初始化 iOS Xcode 工程（生成 src-tauri/gen/apple/）
+npm run ios:init
+
+# 初始化 Android Gradle 工程（生成 src-tauri/gen/android/）
+npm run android:init
+```
+
+### 构建
+
+```bash
+# 构建 iOS IPA
+npm run ios:build
+# 输出：apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
+
+# 构建 Android APK
+npm run android:build
+# 输出：apps/tauri/src-tauri/gen/android/app/build/outputs/apk/
+```
+
+从仓库根目录使用快捷命令：
+
+```bash
+npm run ios:build
+npm run android:build
+```
+
+### 用 Sideloadly 安装到 iOS
+
+1. 执行 `npm run ios:build` 构建 IPA 包。
+2. 打开 Sideloadly，把 `.ipa` 文件拖入。
+3. 输入你的 Apple ID 并按提示操作。
+4. 在设备上信任开发者证书（设置 → 通用 → VPN 与设备管理）。
+
+### 移动端连接服务端
+
+首次启动时 App 无法访问 `127.0.0.1`（那是手机自己，不是你的电脑）。
+在 App 的 Settings 中输入 Chresmus server 的局域网地址，例如：
+
+```
+http://192.168.1.x:4311
+```
+
+确保服务端以网络暴露模式启动：
+
+```bash
+HOST=0.0.0.0 PORT=4311 npm run dev --workspace @chresmus/server
+```
+
 ## 环境要求
 
 - Node.js 20+
 - 本地至少安装一个支持的 agent
 - 如果使用 Codex app-server 模式：本地可用 `codex`
+- 移动端构建：Rust + 对应平台工具链（见上方移动端章节）
 
 常用 Codex 环境变量：
 

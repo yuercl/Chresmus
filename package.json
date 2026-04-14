@@ -25,7 +25,13 @@
     "sanitize:traces": "node scripts/sanitize-traces.mjs",
     "generate:codex-schema": "node scripts/generate-codex-schema.mjs",
     "generate:opencode-manifest": "node scripts/generate-opencode-manifest.mjs",
-    "screenshot:codex": "node skills/codex-window-debug/tools/codex-window-screenshot.mjs"
+    "screenshot:codex": "node skills/codex-window-debug/tools/codex-window-screenshot.mjs",
+    "tauri:dev": "npm run dev --workspace @chresmus/tauri",
+    "tauri:build": "npm run build --workspace @chresmus/tauri",
+    "ios:init": "npm run ios:init --workspace @chresmus/tauri",
+    "ios:build": "npm run ios:build --workspace @chresmus/tauri",
+    "android:init": "npm run android:init --workspace @chresmus/tauri",
+    "android:build": "npm run android:build --workspace @chresmus/tauri"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
