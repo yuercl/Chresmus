@@ -64,6 +64,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        run: pnpm run prepare:workspace-dist
+
       - name: Accept Android licenses
         run: yes | sdkmanager --licenses > /dev/null
 

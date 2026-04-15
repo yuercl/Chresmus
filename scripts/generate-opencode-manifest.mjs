@@ -8,8 +8,8 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 const repoRoot = process.cwd();
 const sdkTypeCandidates = [
-  path.join(repoRoot, "packages", "opencode-api", "node_modules", "@opencode-ai", "sdk", "dist", "gen", "types.gen.d.ts"),
-  path.join(repoRoot, "node_modules", "@opencode-ai", "sdk", "dist", "gen", "types.gen.d.ts")
+  path.join(repoRoot, "node_modules", "@opencode-ai", "sdk", "dist", "gen", "types.gen.d.ts"),
+  path.join(repoRoot, "packages", "opencode-api", "node_modules", "@opencode-ai", "sdk", "dist", "gen", "types.gen.d.ts")
 ];
 
 const sdkTypesPath = (() => {
@@ -31,6 +31,7 @@ const outputPath = path.join(
   "generated",
   "OpenCodeManifest.ts"
 );
+const sdkTypesDisplayPath = "node_modules/@opencode-ai/sdk/dist/gen/types.gen.d.ts";
 
 function assertSourceFile(filePath) {
   const program = ts.createProgram([filePath], {
@@ -113,7 +114,7 @@ function renderTupleConstant(constantName, values) {
 function writeManifestFile(manifest) {
   const lines = [
     "// GENERATED FILE. DO NOT EDIT.",
-    `// Source: ${path.relative(repoRoot, sdkTypesPath)}`,
+    `// Source: ${sdkTypesDisplayPath}`,
     "",
     renderTupleConstant("OPENCODE_EVENT_TYPES", manifest.eventTypes),
     "export type OpenCodeEventType = typeof OPENCODE_EVENT_TYPES[number];",
