@@ -124,6 +124,7 @@ jobs:
           path: |
             apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
             apps/tauri/src-tauri/gen/apple/build/**/*.xcarchive
-            apps/tauri/src-tauri/gen/apple/project/**/*.xcodeproj
-            apps/tauri/src-tauri/gen/apple/project/**/*.xcworkspace
+            apps/tauri/src-tauri/gen/apple/*.xcodeproj
+            apps/tauri/src-tauri/gen/apple/**/*.xcworkspace
+            apps/tauri/src-tauri/gen/apple/ExportOptions.plist
           if-no-files-found: warn
