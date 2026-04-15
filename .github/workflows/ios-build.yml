@@ -109,9 +109,12 @@ jobs:
           IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
         run: pnpm --filter @chresmus/tauri ios:build -- --method "$IOS_EXPORT_METHOD"
 
-      - name: Build unsigned iOS artifacts
+      - name: Prepare unsigned iOS project artifacts
         if: ${{ env.HAS_AUTOMATIC_SIGNING != 'true' && env.HAS_MANUAL_SIGNING != 'true' }}
-        run: pnpm --filter @chresmus/tauri ios:build -- --no-sign
+        run: |
+          set -euo pipefail
+          echo "No Apple signing secrets configured."
+          echo "Uploading generated Xcode project so the app can be signed and exported locally."
 
       - name: Upload iOS artifacts
         if: always()

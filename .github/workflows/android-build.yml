@@ -77,7 +77,7 @@ jobs:
         run: pnpm --filter @chresmus/tauri android:init
 
       - name: Build Android APK
-        run: pnpm --filter @chresmus/tauri android:build -- --apk
+        run: pnpm --filter @chresmus/tauri android:build
 
       - name: Upload Android artifacts
         if: always()
