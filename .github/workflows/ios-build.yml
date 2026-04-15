@@ -2,6 +2,16 @@ name: ios-build
 
 on:
   workflow_dispatch:
+    inputs:
+      export_method:
+        description: IPA export method
+        required: true
+        default: release-testing
+        type: choice
+        options:
+          - release-testing
+          - debugging
+          - app-store-connect
   push:
     branches:
       - main
@@ -24,20 +34,23 @@ jobs:
     timeout-minutes: 60
     env:
       CI: "true"
+      IOS_EXPORT_METHOD: ${{ github.event.inputs.export_method || 'release-testing' }}
+      HAS_AUTOMATIC_SIGNING: ${{ secrets.APPLE_API_KEY != '' && secrets.APPLE_API_ISSUER != '' && secrets.APPLE_API_PRIVATE_KEY != '' && secrets.APPLE_DEVELOPMENT_TEAM != '' }}
+      HAS_MANUAL_SIGNING: ${{ secrets.IOS_CERTIFICATE != '' && secrets.IOS_CERTIFICATE_PASSWORD != '' && secrets.IOS_MOBILE_PROVISION != '' && secrets.APPLE_DEVELOPMENT_TEAM != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
 
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "24"
           cache: pnpm
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.18.0
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -55,14 +68,47 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Show signing mode
+        run: |
+          set -euo pipefail
+          if [ "${HAS_AUTOMATIC_SIGNING}" = "true" ] || [ "${HAS_MANUAL_SIGNING}" = "true" ]; then
+            echo "Building signed iOS artifacts."
+          else
+            echo "No Apple signing secrets configured. Building unsigned iOS artifacts for local re-signing."
+          fi
+
+      - name: Write App Store Connect API key
+        if: ${{ env.HAS_AUTOMATIC_SIGNING == 'true' }}
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          key_path="$RUNNER_TEMP/private_keys/AuthKey_${APPLE_API_KEY}.p8"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
       - name: Generate Tauri icons
         run: pnpm --filter @chresmus/tauri icon
 
       - name: Initialize iOS project
         run: pnpm --filter @chresmus/tauri ios:init
 
-      - name: Build iOS IPA
-        run: pnpm --filter @chresmus/tauri ios:build -- --export-method development
+      - name: Build signed iOS IPA
+        if: ${{ env.HAS_AUTOMATIC_SIGNING == 'true' || env.HAS_MANUAL_SIGNING == 'true' }}
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+        run: pnpm --filter @chresmus/tauri ios:build -- --method "$IOS_EXPORT_METHOD"
+
+      - name: Build unsigned iOS artifacts
+        if: ${{ env.HAS_AUTOMATIC_SIGNING != 'true' && env.HAS_MANUAL_SIGNING != 'true' }}
+        run: pnpm --filter @chresmus/tauri ios:build -- --no-sign
 
       - name: Upload iOS artifacts
         if: always()

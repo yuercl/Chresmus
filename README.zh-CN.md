@@ -238,9 +238,11 @@ pnpm run android:init
 ### 构建
 
 ```bash
-# 构建 iOS IPA
+# 构建用于本地二次签名的 iOS 产物
 pnpm run ios:build
-# 输出：apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
+# 输出：apps/tauri/src-tauri/gen/apple/build/**/*.xcarchive
+#      apps/tauri/src-tauri/gen/apple/project/**/*
+#      apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa（有签名时）
 
 # 构建 Android APK
 pnpm run android:build
@@ -254,12 +256,24 @@ pnpm run ios:build
 pnpm run android:build
 ```
 
+### CI 移动端产物
+
+- GitHub Actions 的 `ios-build` 默认上传未签名的 iOS 构建产物，供你在本地用 Xcode、Sideloadly 或 AltStore 二次签名。
+- 如果配置了 Apple 签名 secrets，同一个 workflow 也可以直接导出已签名的 `.ipa`。
+- GitHub Actions 的 `android-build` 会直接上传 Android `.apk` 产物。
+
 ### 用 Sideloadly 安装到 iOS
 
-1. 执行 `pnpm run ios:build` 构建 IPA 包。
-2. 打开 Sideloadly，把 `.ipa` 文件拖入。
+1. 执行 `pnpm run ios:build`，或直接下载 `ios-build` workflow 的产物。
+2. 如果已经拿到未签名 `.ipa`，直接拖进 Sideloadly；否则先从生成的 Xcode 工程或归档里导出 / 重签。
 3. 输入你的 Apple ID 并按提示操作。
 4. 在设备上信任开发者证书（设置 → 通用 → VPN 与设备管理）。
+
+### 安装到 Android
+
+1. 执行 `pnpm run android:build`，或直接下载 `android-build` workflow 的 APK 产物。
+2. 把 `.apk` 传到设备上并打开安装。
+3. 如果系统提示，允许来自该来源的安装权限。
 
 ### 移动端连接服务端
 

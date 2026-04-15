@@ -1,0 +1,88 @@
+name: android-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - ".github/workflows/android-build.yml"
+      - "apps/tauri/**"
+      - "apps/web/**"
+      - "apps/server/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "scripts/**"
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Generate Tauri icons
+        run: pnpm --filter @chresmus/tauri icon
+
+      - name: Initialize Android project
+        run: pnpm --filter @chresmus/tauri android:init
+
+      - name: Build Android APK
+        run: pnpm --filter @chresmus/tauri android:build -- --apk
+
+      - name: Upload Android artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-artifacts
+          path: |
+            apps/tauri/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            apps/tauri/src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+            apps/tauri/src-tauri/gen/android/.gradle/**/*.log
+          if-no-files-found: warn

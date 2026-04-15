@@ -239,9 +239,11 @@ pnpm run android:init
 ### Building
 
 ```bash
-# Build iOS IPA
+# Build iOS artifacts for local re-signing
 pnpm run ios:build
-# Output: apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa
+# Output: apps/tauri/src-tauri/gen/apple/build/**/*.xcarchive
+#         apps/tauri/src-tauri/gen/apple/project/**/*
+#         apps/tauri/src-tauri/gen/apple/build/arm64/*.ipa (when signing is available)
 
 # Build Android APK
 pnpm run android:build
@@ -255,12 +257,24 @@ pnpm run ios:build
 pnpm run android:build
 ```
 
+### CI mobile artifacts
+
+- GitHub Actions `ios-build` uploads unsigned iOS build artifacts by default so you can re-sign them locally with Xcode, Sideloadly, or AltStore.
+- If Apple signing secrets are configured, the same workflow can also export a signed `.ipa`.
+- GitHub Actions `android-build` uploads Android `.apk` artifacts directly.
+
 ### Installing on iOS with Sideloadly
 
-1. Build the IPA with `pnpm run ios:build`.
-2. Open Sideloadly and drag the `.ipa` file onto it.
+1. Build iOS artifacts with `pnpm run ios:build` or download them from the `ios-build` workflow artifacts.
+2. If you already have an unsigned `.ipa`, drag it into Sideloadly. Otherwise export or re-sign from the generated Xcode project / archive first.
 3. Enter your Apple ID and follow the prompts.
 4. Trust the developer certificate on the device (Settings → General → VPN & Device Management).
+
+### Installing on Android
+
+1. Build the app with `pnpm run android:build` or download the APK from the `android-build` workflow artifacts.
+2. Transfer the `.apk` to your device and open it.
+3. Allow installs from the chosen source if Android prompts for permission.
 
 ### Connecting to your server from the mobile app
 
