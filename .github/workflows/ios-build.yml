@@ -98,6 +98,68 @@ jobs:
       - name: Initialize iOS project
         run: pnpm --filter @chresmus/tauri ios:init
 
+      - name: Build unsigned iOS archive
+        if: ${{ env.HAS_AUTOMATIC_SIGNING != 'true' && env.HAS_MANUAL_SIGNING != 'true' }}
+        run: |
+          set -euo pipefail
+          apple_dir="apps/tauri/src-tauri/gen/apple"
+          xcodeproj="$(find "$apple_dir" -maxdepth 1 -name '*.xcodeproj' -print -quit)"
+          if [ -z "$xcodeproj" ]; then
+            echo "Expected a generated .xcodeproj in $apple_dir" >&2
+            exit 1
+          fi
+
+          workspace="$xcodeproj/project.xcworkspace"
+          if [ ! -d "$workspace" ]; then
+            echo "Expected a generated workspace at $workspace" >&2
+            exit 1
+          fi
+
+          scheme="$(xcodebuild -list -json -workspace "$workspace" | node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const schemes = data.workspace?.schemes; if (!Array.isArray(schemes) || schemes.length === 0 || typeof schemes[0] !== "string" || schemes[0].trim() === "") { process.stderr.write("Unable to determine iOS scheme from xcodebuild output\\n"); process.exit(1); } process.stdout.write(schemes[0].trim());')"
+          archive_dir="$apple_dir/build/arm64"
+          archive_path="$archive_dir/${scheme}.xcarchive"
+
+          mkdir -p "$archive_dir"
+          xcodebuild \
+            -workspace "$workspace" \
+            -scheme "$scheme" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$archive_path" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            archive
+
+      - name: Package unsigned IPA
+        if: ${{ env.HAS_AUTOMATIC_SIGNING != 'true' && env.HAS_MANUAL_SIGNING != 'true' }}
+        run: |
+          set -euo pipefail
+          archive_path="$(find apps/tauri/src-tauri/gen/apple/build -type d -name '*.xcarchive' -print -quit)"
+          if [ -z "$archive_path" ]; then
+            echo "Expected an unsigned .xcarchive to package" >&2
+            exit 1
+          fi
+
+          app_path="$(find "$archive_path/Products/Applications" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "Expected an .app inside $archive_path/Products/Applications" >&2
+            exit 1
+          fi
+
+          app_name="$(basename "$app_path" .app)"
+          ipa_dir="apps/tauri/src-tauri/gen/apple/build/arm64"
+          ipa_path="$ipa_dir/${app_name}-unsigned.ipa"
+          staging_dir="$RUNNER_TEMP/unsigned-ipa"
+
+          rm -rf "$staging_dir"
+          mkdir -p "$staging_dir/Payload"
+          cp -R "$app_path" "$staging_dir/Payload/"
+          rm -f "$ipa_path"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$staging_dir/Payload" "$ipa_path"
+          echo "Packaged unsigned IPA at $ipa_path"
+
       - name: Build signed iOS IPA
         if: ${{ env.HAS_AUTOMATIC_SIGNING == 'true' || env.HAS_MANUAL_SIGNING == 'true' }}
         env:
@@ -114,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "No Apple signing secrets configured."
-          echo "Uploading generated Xcode project so the app can be signed and exported locally."
+          echo "Uploading generated unsigned IPA, archive, and Xcode project for local signing."
 
       - name: Upload iOS artifacts
         if: always()
