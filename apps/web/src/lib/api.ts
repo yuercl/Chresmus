@@ -1002,6 +1002,14 @@ export async function sendMessage(input: {
   parts: UnifiedInputPart[];
   cwd?: string;
   isSteering?: boolean;
+  collaborationMode?: {
+    mode: string;
+    settings: {
+      model?: string | null;
+      reasoningEffort?: string | null;
+      developerInstructions?: string | null;
+    };
+  };
   baseUrlOverride?: string;
 }): Promise<void> {
   const result = await runUnifiedCommand({
@@ -1013,6 +1021,9 @@ export async function sendMessage(input: {
     ...(input.cwd ? { cwd: input.cwd } : {}),
     ...(typeof input.isSteering === "boolean"
       ? { isSteering: input.isSteering }
+      : {}),
+    ...(input.collaborationMode
+      ? { collaborationMode: input.collaborationMode }
       : {}),
   }, input.baseUrlOverride);
 

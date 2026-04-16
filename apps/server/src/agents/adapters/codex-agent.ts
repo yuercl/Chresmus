@@ -31,6 +31,7 @@ import type {
   AgentReadThreadInput,
   AgentReadThreadResult,
   AgentSendMessageInput,
+  AgentSetCollaborationModeInput,
   AgentSubmitUserInputInput,
   AgentThreadLiveState,
   AgentThreadStreamEvents
@@ -106,7 +107,7 @@ export class CodexAgentAdapter implements AgentAdapter {
   public readonly capabilities: AgentCapabilities = {
     canListModels: true,
     canListCollaborationModes: true,
-    canSetCollaborationMode: false,
+    canSetCollaborationMode: true,
     canSubmitUserInput: true,
     canReadLiveState: true,
     canReadStreamEvents: true,
@@ -121,6 +122,10 @@ export class CodexAgentAdapter implements AgentAdapter {
   private readonly streamSnapshotByThreadId = new Map<
     string,
     ThreadConversationState
+  >();
+  private readonly pendingCollaborationModeByThreadId = new Map<
+    string,
+    AgentSetCollaborationModeInput["collaborationMode"]
   >();
   private readonly threadTitleById = new Map<string, string | null>();
   private readonly appEventListeners = new Set<(event: CodexAppEvent) => void>();
@@ -390,7 +395,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
     }
 
-    const parsedThread = parseThreadConversationState(result.thread);
+    const parsedThread = this.applyPendingCollaborationModeToThread(
+      input.threadId,
+      parseThreadConversationState(result.thread)
+    );
     const existingSnapshot = this.streamSnapshotByThreadId.get(input.threadId);
     const shouldStoreSnapshot =
       input.includeTurns ||
@@ -434,6 +442,15 @@ export class CodexAgentAdapter implements AgentAdapter {
         threadId: input.threadId,
         input: input.parts,
         ...(input.cwd ? { cwd: input.cwd } : {}),
+        ...(input.collaborationMode
+          ? { collaborationMode: input.collaborationMode }
+          : this.pendingCollaborationModeByThreadId.has(input.threadId)
+          ? {
+              collaborationMode:
+                this.pendingCollaborationModeByThreadId.get(input.threadId) ??
+                null
+            }
+          : {}),
         attachments: []
       });
     };
@@ -463,6 +480,28 @@ export class CodexAgentAdapter implements AgentAdapter {
   public async listCollaborationModes() {
     this.ensureCodexAvailable();
     return this.runAppServerCall(() => this.appClient.listCollaborationModes());
+  }
+
+  public async setCollaborationMode(
+    input: AgentSetCollaborationModeInput
+  ): Promise<{ ownerClientId: string }> {
+    this.ensureCodexAvailable();
+    this.pendingCollaborationModeByThreadId.set(
+      input.threadId,
+      input.collaborationMode
+    );
+
+    const nextThread = this.applyPendingCollaborationModeToThread(
+      input.threadId,
+      this.getThreadState(input.threadId)
+    );
+    this.storeSnapshot(input.threadId, nextThread);
+    this.emitRealtimeThreadUpdate(input.threadId, nextThread);
+
+    return {
+      ownerClientId:
+        this.threadOwnerById.get(input.threadId) ?? APP_SERVER_OWNER_CLIENT_ID
+    };
   }
 
   public async readRateLimits(): Promise<AppServerGetAccountRateLimitsResponse> {
@@ -576,7 +615,11 @@ export class CodexAgentAdapter implements AgentAdapter {
     return {
       ownerClientId:
         this.threadOwnerById.get(threadId) ?? APP_SERVER_OWNER_CLIENT_ID,
-      conversationState: this.streamSnapshotByThreadId.get(threadId) ?? null,
+      conversationState:
+        this.applyPendingCollaborationMode(
+          threadId,
+          this.streamSnapshotByThreadId.get(threadId) ?? null
+        ) ?? null,
       liveStateError: null
     };
   }
@@ -1155,11 +1198,14 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   private getThreadState(threadId: string): ThreadConversationState {
     return (
-      this.streamSnapshotByThreadId.get(threadId) ?? {
-        id: threadId,
-        turns: [],
-        requests: []
-      }
+      this.applyPendingCollaborationModeToThread(
+        threadId,
+        this.streamSnapshotByThreadId.get(threadId) ?? {
+          id: threadId,
+          turns: [],
+          requests: []
+        }
+      )
     );
   }
 
@@ -1167,14 +1213,64 @@ export class CodexAgentAdapter implements AgentAdapter {
     threadId: string,
     thread: ThreadConversationState
   ): void {
-    this.streamSnapshotByThreadId.set(threadId, thread);
-    this.setThreadTitle(threadId, thread.title);
+    const nextThread = this.applyPendingCollaborationModeToThread(
+      threadId,
+      thread
+    );
+    this.streamSnapshotByThreadId.set(threadId, nextThread);
+    this.setThreadTitle(threadId, nextThread.title);
     this.threadOwnerById.set(threadId, APP_SERVER_OWNER_CLIENT_ID);
     appendSyntheticSnapshotEvent(
       this.streamEventsByThreadId,
       threadId,
-      thread
+      nextThread
     );
+  }
+
+  private applyPendingCollaborationMode(
+    threadId: string,
+    thread: ThreadConversationState | null
+  ): ThreadConversationState | null {
+    if (!thread) {
+      return null;
+    }
+
+    return this.applyPendingCollaborationModeToThread(threadId, thread);
+  }
+
+  private applyPendingCollaborationModeToThread(
+    threadId: string,
+    thread: ThreadConversationState
+  ): ThreadConversationState {
+    const pending =
+      this.pendingCollaborationModeByThreadId.get(threadId) ?? null;
+    if (!pending) {
+      return thread;
+    }
+
+    if (thread.latestCollaborationMode) {
+      const currentSignature = buildCollaborationModeSignature(
+        thread.latestCollaborationMode
+      );
+      const pendingSignature = buildCollaborationModeSignature(pending);
+      if (currentSignature === pendingSignature) {
+        this.pendingCollaborationModeByThreadId.delete(threadId);
+        return thread;
+      }
+    }
+
+    return parseThreadConversationState({
+      ...thread,
+      latestCollaborationMode: pending,
+      latestModel:
+        pending.settings.model !== undefined
+          ? pending.settings.model
+          : thread.latestModel,
+      latestReasoningEffort:
+        pending.settings.reasoning_effort !== undefined
+          ? pending.settings.reasoning_effort
+          : thread.latestReasoningEffort
+    });
   }
 
   private resolveThreadTitle(
@@ -1224,6 +1320,17 @@ function toErrorMessage(error: Error | string | unknown): string {
     return error;
   }
   return String(error);
+}
+
+function buildCollaborationModeSignature(
+  mode: AgentSetCollaborationModeInput["collaborationMode"]
+): string {
+  return [
+    mode.mode,
+    mode.settings.model ?? "",
+    mode.settings.reasoning_effort ?? "",
+    mode.settings.developer_instructions ?? ""
+  ].join("|");
 }
 
 const INVALID_REQUEST_ERROR_CODE = -32600;

@@ -37,6 +37,23 @@ const components: Components = {
       />
     );
   },
+  p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+  ul: ({ children }) => (
+    <ul className="my-3 list-disc space-y-2 pl-5 marker:text-muted-foreground/80">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-3 list-decimal space-y-2 pl-5 marker:font-medium marker:text-muted-foreground/80">
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => <li className="pl-1 leading-7">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-4 border-l-2 border-border pl-3 italic text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
 };
 
 function MarkdownTextComponent({ text }: MarkdownTextProps) {

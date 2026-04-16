@@ -78,6 +78,7 @@ export interface AgentSendMessageInput {
   ownerClientId?: string;
   cwd?: string;
   isSteering?: boolean;
+  collaborationMode?: CollaborationMode;
 }
 
 export interface AgentSetCollaborationModeInput {

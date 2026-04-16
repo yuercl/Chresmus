@@ -185,10 +185,30 @@ const TokenUsageCamelCaseSchema = z
   })
   .passthrough();
 
+const TurnErrorMessageSchema = z
+  .object({
+    message: z.string(),
+  })
+  .strict();
+
+const ErrorMessageCarrierSchema = z
+  .object({
+    message: z.string(),
+  })
+  .strict();
+
 interface NormalizedTokenUsage {
   contextTokens: number;
   sessionTotalTokens: number;
   contextWindow: number | null;
+}
+
+type ThreadStatusTone = "progress" | "warning" | "danger" | "neutral";
+
+interface ThreadStatusSummary {
+  label: string;
+  detail: string | null;
+  tone: ThreadStatusTone;
 }
 
 interface LoadSelectedThreadOptions {
@@ -583,24 +603,62 @@ function mergeIncomingThreads(
   return sortThreadsByRecency(merged);
 }
 
-function toErrorMessage(err: unknown): string {
+function toErrorMessage<T>(err: T): string {
   const normalize = (message: string): string => {
-    if (message === "Codex app-server is not connected") {
+    const trimmed = message.trim();
+    const normalized = trimmed.toLowerCase();
+    if (trimmed === "Codex app-server is not connected") {
       return "";
     }
-    return message;
+    if (
+      trimmed === "Network request failed" ||
+      trimmed === "Failed to fetch"
+    ) {
+      return "Request failed. Check network/server, then send again.";
+    }
+    if (trimmed === "Claude Code does not support image messages") {
+      return "Image message was rejected by Claude Code. Send again or switch model/provider.";
+    }
+    if (trimmed === "OpenCode does not support image messages") {
+      return "Image message was rejected by OpenCode. Send again or switch model/provider.";
+    }
+    if (trimmed === "Qwen Code does not support image messages") {
+      return "Image message was rejected by Qwen Code. Send again or switch model/provider.";
+    }
+    if (
+      normalized.includes("model call failed") ||
+      normalized.includes("model request failed")
+    ) {
+      return "Model call failed. Send again. If it keeps failing, switch model or check the provider/server status.";
+    }
+    if (
+      normalized.includes("rate limit") ||
+      normalized.includes("too many requests")
+    ) {
+      return "Rate limited. Wait a moment, then send again.";
+    }
+    if (
+      normalized.includes("context window") ||
+      normalized.includes("context length") ||
+      normalized.includes("prompt is too long") ||
+      normalized.includes("maximum context")
+    ) {
+      return "Message is too large for the current model context. Start a new thread or reduce the input, then send again.";
+    }
+    return trimmed;
   };
 
   if (err instanceof Error) {
     return normalize(err.message);
   }
-  if (typeof err === "object" && err !== null && "message" in err) {
-    const withMessage = err as { message?: string };
-    if (typeof withMessage.message === "string") {
-      return normalize(withMessage.message);
-    }
+  if (typeof err === "string") {
+    return normalize(err);
   }
-  return normalize(String(err));
+  const parsed = ErrorMessageCarrierSchema.safeParse(err);
+  if (parsed.success) {
+    return normalize(parsed.data.message);
+  }
+  return normalize(String(err ?? ""));
 }
 
 const DEFAULT_CODEX_APPROVAL_POLICY = "never";
@@ -743,6 +801,123 @@ function canUseFeature(
 
 function isTurnInProgressStatus(status: string | undefined): boolean {
   return status === "in-progress" || status === "inProgress";
+}
+
+function isTurnFailedStatus(status: string | undefined): boolean {
+  return status === "failed" || status === "error";
+}
+
+function isTurnInterruptedStatus(status: string | undefined): boolean {
+  return (
+    status === "interrupted" ||
+    status === "aborted" ||
+    status === "cancelled" ||
+    status === "canceled"
+  );
+}
+
+function readTurnErrorMessage(
+  error: ConversationTurn["error"] | undefined,
+): string | null {
+  if (error === undefined || error === null) {
+    return null;
+  }
+
+  const parsed = TurnErrorMessageSchema.safeParse(error);
+  if (!parsed.success) {
+    return null;
+  }
+
+  const message = parsed.data.message.trim();
+  return message.length > 0 ? message : null;
+}
+
+function buildThreadStatusSummary(input: {
+  isGenerating: boolean;
+  waitingOnApproval: boolean;
+  waitingOnUserInput: boolean;
+  lastTurn: ConversationTurn | undefined;
+  liveStateError: LiveStateResponse["liveStateError"];
+  uiErrorMessage?: string | null;
+}): ThreadStatusSummary | null {
+  const lastTurnErrorMessage = readTurnErrorMessage(input.lastTurn?.error);
+  const uiErrorMessage =
+    typeof input.uiErrorMessage === "string" &&
+    input.uiErrorMessage.trim().length > 0
+      ? input.uiErrorMessage.trim()
+      : null;
+
+  if (isTurnFailedStatus(input.lastTurn?.status)) {
+    return {
+      label: "Error",
+      detail: lastTurnErrorMessage ?? "The last turn failed.",
+      tone: "danger",
+    };
+  }
+
+  if (isTurnInterruptedStatus(input.lastTurn?.status)) {
+    return {
+      label: "Interrupted",
+      detail: lastTurnErrorMessage ?? "The last turn was interrupted.",
+      tone: "danger",
+    };
+  }
+
+  if (input.isGenerating) {
+    return {
+      label: "Responding",
+      detail: null,
+      tone: "progress",
+    };
+  }
+
+  if (uiErrorMessage) {
+    return {
+      label: "Error",
+      detail: uiErrorMessage,
+      tone: "danger",
+    };
+  }
+
+  if (input.liveStateError) {
+    return {
+      label: "Sync issue",
+      detail: input.liveStateError.message,
+      tone: "danger",
+    };
+  }
+
+  return null;
+}
+
+function threadStatusClasses(
+  tone: ThreadStatusTone,
+): { container: string; dot: string } {
+  switch (tone) {
+    case "progress":
+      return {
+        container:
+          "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+        dot: "bg-emerald-500",
+      };
+    case "warning":
+      return {
+        container:
+          "border-amber-500/30 bg-amber-500/12 text-amber-700 dark:text-amber-300",
+        dot: "bg-amber-500",
+      };
+    case "danger":
+      return {
+        container:
+          "border-rose-500/30 bg-rose-500/12 text-rose-700 dark:text-rose-300",
+        dot: "bg-rose-500",
+      };
+    case "neutral":
+      return {
+        container: "border-border bg-muted/40 text-muted-foreground",
+        dot: "bg-muted-foreground",
+      };
+  }
 }
 
 function isThreadGeneratingState(
@@ -2000,6 +2175,7 @@ export function App(): React.JSX.Element {
   const isChatAtBottomRef = useRef(true);
   const shouldAutoFollowChatRef = useRef(true);
   const lastAppliedModeSignatureRef = useRef("");
+  const pendingLocalModeSignatureRef = useRef("");
   const hasHydratedAgentSelectionRef = useRef(false);
   const threadProviderByIdRef = useRef<Map<string, AgentId>>(new Map());
   const optimisticSelectedThreadIdsRef = useRef<Set<string>>(new Set());
@@ -2425,15 +2601,15 @@ export function App(): React.JSX.Element {
     [activeThreadAgentId, agentsById, selectedAgentDescriptor],
   );
   const activeAgentLabel = activeAgentDescriptor?.label ?? selectedAgentLabel;
-  const canSetCollaborationMode = canUseFeature(
-    activeAgentDescriptor,
-    "setCollaborationMode",
-  );
-  const canListModels = canUseFeature(activeAgentDescriptor, "listModels");
-  const canListCollaborationModes = canUseFeature(
-    activeAgentDescriptor,
-    "listCollaborationModes",
-  );
+  const canSetCollaborationMode =
+    hasResolvedSelectedThreadProvider &&
+    canUseFeature(activeAgentDescriptor, "setCollaborationMode");
+  const canListModels =
+    hasResolvedSelectedThreadProvider &&
+    canUseFeature(activeAgentDescriptor, "listModels");
+  const canListCollaborationModes =
+    hasResolvedSelectedThreadProvider &&
+    canUseFeature(activeAgentDescriptor, "listCollaborationModes");
   const canSubmitUserInputForActiveAgent = canUseFeature(
     activeAgentDescriptor,
     "submitUserInput",
@@ -2561,11 +2737,66 @@ export function App(): React.JSX.Element {
       ),
     [appDefaultModelId, modelOptions, selectedModelId],
   );
+  const activeCollaborationModeDraft = useMemo(() => {
+    if (!selectedModeKey) {
+      return null;
+    }
+    const selectedMode = modes.find((entry) => entry.mode === selectedModeKey) ?? null;
+    return {
+      mode: selectedModeKey,
+      settings: {
+        ...(selectedModelId ? { model: selectedModelId } : {}),
+        ...(selectedReasoningEffort
+          ? { reasoningEffort: selectedReasoningEffort }
+          : {}),
+        ...(selectedMode
+          ? {
+              developerInstructions:
+                selectedMode.developerInstructions ?? null,
+            }
+          : {}),
+      },
+    };
+  }, [modes, selectedModeKey, selectedModelId, selectedReasoningEffort]);
 
   const deferredConversationState = useDeferredValue(conversationState);
   const turns = deferredConversationState?.turns ?? [];
   const lastTurn = turns[turns.length - 1];
-  const isGenerating = isTurnInProgressStatus(lastTurn?.status);
+  const isGenerating = useMemo(() => {
+    const liveGenerating =
+      liveState?.threadId === selectedThreadId
+        ? isThreadGeneratingState(liveState.conversationState)
+        : false;
+    if (liveGenerating) {
+      return true;
+    }
+    return Boolean(selectedThread?.isGenerating);
+  }, [
+    liveState?.conversationState,
+    liveState?.threadId,
+    selectedThread?.isGenerating,
+    selectedThreadId,
+  ]);
+  const selectedThreadStatus = useMemo(
+    () =>
+      buildThreadStatusSummary({
+        isGenerating,
+        waitingOnApproval: selectedThreadWaitingState?.waitingOnApproval ?? false,
+        waitingOnUserInput: selectedThreadWaitingState?.waitingOnUserInput ?? false,
+        lastTurn,
+        liveStateError: liveStateStreamError,
+        uiErrorMessage: selectedThreadId ? error : null,
+      }),
+    [
+      error,
+      isGenerating,
+      lastTurn,
+      liveStateStreamError,
+      selectedThreadId,
+      selectedThreadWaitingState?.waitingOnApproval,
+      selectedThreadWaitingState?.waitingOnUserInput,
+    ],
+  );
   const canUseComposer = isGenerating
     ? canInterruptForActiveAgent
     : selectedThreadId
@@ -2573,6 +2804,7 @@ export function App(): React.JSX.Element {
       : availableAgentIds.length > 0 &&
         canCreateThreadForSelectedAgent &&
         canSendMessageForActiveAgent;
+  const canAttachImagesForActiveAgent = true;
   const conversationWindow = useMemo(() => {
     type IndexedConversationItem = {
       key: string;
@@ -2831,7 +3063,62 @@ export function App(): React.JSX.Element {
       () => null,
     );
     const sidebarResultsByTarget = new Map<string, SidebarTargetResult>();
-    const sidebarPromises = serverTargets.map(async (target) => {
+    const applySidebarResults = (
+      orderedResults: readonly SidebarTargetResult[],
+    ): Thread[] => {
+      const mergedSidebar = mergeSidebarTargetResults(
+        orderedResults,
+        activeCatalogBaseUrl,
+      );
+
+      const nextThreadProviders = new Map(threadProviderByIdRef.current);
+      for (const thread of mergedSidebar.threads) {
+        nextThreadProviders.set(thread.id, thread.provider);
+      }
+      threadProviderByIdRef.current = nextThreadProviders;
+
+      startTransition(() => {
+        setThreadListErrors((prev) =>
+          hasSameThreadListErrors(prev, mergedSidebar.errors)
+            ? prev
+            : mergedSidebar.errors,
+        );
+        setThreads((previousThreads) => {
+          const nextThreads = mergeIncomingThreads(
+            mergedSidebar.threads,
+            previousThreads,
+          );
+          const existingIds = new Set(nextThreads.map((thread) => thread.id));
+          for (const thread of previousThreads) {
+            if (existingIds.has(thread.id)) {
+              continue;
+            }
+            const shouldKeepThread =
+              optimisticSelectedThreadIdsRef.current.has(thread.id) ||
+              thread.id === selectedThreadIdRef.current;
+            if (!shouldKeepThread) {
+              continue;
+            }
+            existingIds.add(thread.id);
+            nextThreads.push(thread);
+          }
+          const sortedThreads = sortThreadsByRecency(nextThreads);
+          const nextThreadsSignature = buildThreadsSignature(sortedThreads);
+          if (
+            signaturesMatch(threadsSignatureRef.current, nextThreadsSignature)
+          ) {
+            return previousThreads;
+          }
+          threadsSignatureRef.current = nextThreadsSignature;
+          return sortedThreads;
+        });
+      });
+
+      return mergedSidebar.threads;
+    };
+    const fetchSidebarTarget = async (
+      target: ServerTargetOption,
+    ): Promise<SidebarTargetResult> => {
       const result = await listSidebarThreads({
         limit: 80,
         archived: false,
@@ -2843,67 +3130,64 @@ export function App(): React.JSX.Element {
         target,
         result,
       } satisfies SidebarTargetResult;
-    });
-    for (const sidebarPromise of sidebarPromises) {
+    };
+    const shouldStageSidebarTargets =
+      selectedThreadIdRef.current === null && serverTargets.length > 1;
+    const prioritizedTargets = shouldStageSidebarTargets
+      ? (() => {
+          const primaryTarget = primaryServerTarget ?? serverTargets[0] ?? null;
+          if (!primaryTarget) {
+            return [] as ServerTargetOption[];
+          }
+          return [
+            primaryTarget,
+            ...serverTargets.filter((target) => target.id !== primaryTarget.id),
+          ];
+        })()
+      : serverTargets;
+    const eagerTargets = shouldStageSidebarTargets
+      ? prioritizedTargets.slice(0, 1)
+      : prioritizedTargets;
+    const deferredTargets = shouldStageSidebarTargets
+      ? prioritizedTargets.slice(1)
+      : [];
+    const eagerSidebarPromises = eagerTargets.map(fetchSidebarTarget);
+    for (const sidebarPromise of eagerSidebarPromises) {
       void sidebarPromise.then((sidebarResult) => {
         if (loadCoreRequestIdRef.current !== requestId) {
           return;
         }
 
         sidebarResultsByTarget.set(sidebarResult.target.id, sidebarResult);
-        const orderedResults = serverTargets
+        const orderedResults = prioritizedTargets
           .map((target) => sidebarResultsByTarget.get(target.id))
           .filter(
             (result): result is SidebarTargetResult => result !== undefined,
           );
-        const mergedSidebar = mergeSidebarTargetResults(
-          orderedResults,
-          activeCatalogBaseUrl,
-        );
-
-        const nextThreadProviders = new Map(threadProviderByIdRef.current);
-        for (const thread of mergedSidebar.threads) {
-          nextThreadProviders.set(thread.id, thread.provider);
-        }
-        threadProviderByIdRef.current = nextThreadProviders;
-
-        startTransition(() => {
-          setThreadListErrors((prev) =>
-            hasSameThreadListErrors(prev, mergedSidebar.errors)
-              ? prev
-              : mergedSidebar.errors,
-          );
-          setThreads((previousThreads) => {
-            const nextThreads = mergeIncomingThreads(
-              mergedSidebar.threads,
-              previousThreads,
-            );
-            const existingIds = new Set(nextThreads.map((thread) => thread.id));
-            for (const thread of previousThreads) {
-              if (existingIds.has(thread.id)) {
-                continue;
-              }
-              const shouldKeepThread =
-                optimisticSelectedThreadIdsRef.current.has(thread.id) ||
-                thread.id === selectedThreadIdRef.current;
-              if (!shouldKeepThread) {
-                continue;
-              }
-              existingIds.add(thread.id);
-              nextThreads.push(thread);
-            }
-            const sortedThreads = sortThreadsByRecency(nextThreads);
-            const nextThreadsSignature = buildThreadsSignature(sortedThreads);
-            if (
-              signaturesMatch(threadsSignatureRef.current, nextThreadsSignature)
-            ) {
-              return previousThreads;
-            }
-            threadsSignatureRef.current = nextThreadsSignature;
-            return sortedThreads;
-          });
-        });
+        applySidebarResults(orderedResults);
       });
+    }
+    const loadDeferredSidebarTargets = () => {
+      for (const target of deferredTargets) {
+        void fetchSidebarTarget(target).then((sidebarResult) => {
+          if (loadCoreRequestIdRef.current !== requestId) {
+            return;
+          }
+
+          sidebarResultsByTarget.set(sidebarResult.target.id, sidebarResult);
+          const orderedResults = prioritizedTargets
+            .map((candidateTarget) =>
+              sidebarResultsByTarget.get(candidateTarget.id),
+            )
+            .filter(
+              (result): result is SidebarTargetResult => result !== undefined,
+            );
+          applySidebarResults(orderedResults);
+        });
+      }
+    };
+    if (deferredTargets.length > 0) {
+      window.setTimeout(loadDeferredSidebarTargets, 0);
     }
     const tracePromise = shouldLoadDebugData
       ? getTraceStatus()
@@ -2912,7 +3196,7 @@ export function App(): React.JSX.Element {
       ? listDebugHistory(120)
       : Promise.resolve<HistoryResponse | null>(null);
 
-    const sidebarResults = await Promise.allSettled(sidebarPromises);
+    const sidebarResults = await Promise.allSettled(eagerSidebarPromises);
     if (loadCoreRequestIdRef.current !== requestId) {
       return;
     }
@@ -2924,53 +3208,16 @@ export function App(): React.JSX.Element {
           result.status === "fulfilled",
       )
       .map((result) => result.value);
-    const mergedSidebar = mergeSidebarTargetResults(
-      successfulSidebarResults,
-      activeCatalogBaseUrl,
-    );
-    const incomingThreads = mergedSidebar.threads;
+    const incomingThreads =
+      successfulSidebarResults.length > 0
+        ? applySidebarResults(successfulSidebarResults)
+        : [];
     const optimisticSelectedThreadIds = optimisticSelectedThreadIdsRef.current;
     if (optimisticSelectedThreadIds.size > 0) {
       for (const thread of incomingThreads) {
         optimisticSelectedThreadIds.delete(thread.id);
       }
     }
-    const nextThreadProviders = new Map(threadProviderByIdRef.current);
-    for (const thread of incomingThreads) {
-      nextThreadProviders.set(thread.id, thread.provider);
-    }
-    threadProviderByIdRef.current = nextThreadProviders;
-    const nextThreadErrors = mergedSidebar.errors;
-    setThreadListErrors((prev) =>
-      hasSameThreadListErrors(prev, nextThreadErrors) ? prev : nextThreadErrors,
-    );
-    setThreads((previousThreads) => {
-      const nextThreads = mergeIncomingThreads(
-        incomingThreads,
-        previousThreads,
-      );
-      const existingIds = new Set(nextThreads.map((thread) => thread.id));
-      for (const thread of previousThreads) {
-        if (existingIds.has(thread.id)) {
-          continue;
-        }
-        const shouldKeepThread =
-          optimisticSelectedThreadIdsRef.current.has(thread.id) ||
-          thread.id === selectedThreadIdRef.current;
-        if (!shouldKeepThread) {
-          continue;
-        }
-        existingIds.add(thread.id);
-        nextThreads.push(thread);
-      }
-      const sortedThreads = sortThreadsByRecency(nextThreads);
-      const nextThreadsSignature = buildThreadsSignature(sortedThreads);
-      if (signaturesMatch(threadsSignatureRef.current, nextThreadsSignature)) {
-        return previousThreads;
-      }
-      threadsSignatureRef.current = nextThreadsSignature;
-      return sortedThreads;
-    });
 
     const [healthResult, agentsResult, traceResult, historyResult, rateLimitsResult] =
       await Promise.allSettled([
@@ -3807,8 +4054,9 @@ export function App(): React.JSX.Element {
     if (!load) {
       return;
     }
+    const shouldIncludeTurns = cachedState?.readThreadState === null;
     void load(selectedThreadId, {
-      includeTurns: true,
+      includeTurns: shouldIncludeTurns,
       includeStreamEvents: activeTabRef.current === "debug",
     }).catch((e) => setError(toErrorMessage(e)));
   }, [selectedThreadId]);
@@ -3874,7 +4122,10 @@ export function App(): React.JSX.Element {
               const loadThread = loadSelectedThreadRef.current;
               if (loadThread) {
                 await loadThread(selectedThreadIdRef.current, {
-                  includeTurns: true,
+                  includeTurns:
+                    threadViewStateCacheRef.current.get(
+                      selectedThreadIdRef.current,
+                    )?.readThreadState === null,
                   includeStreamEvents: activeTabRef.current === "debug",
                 });
               }
@@ -4268,8 +4519,19 @@ export function App(): React.JSX.Element {
       selectedModelId,
       selectedReasoningEffort,
     );
+    if (
+      activeThreadAgentId === "codex" &&
+      pendingLocalModeSignatureRef.current.length > 0 &&
+      localSignature === pendingLocalModeSignatureRef.current &&
+      remoteSignature !== pendingLocalModeSignatureRef.current
+    ) {
+      return;
+    }
     if (remoteSignature === localSignature) {
       lastAppliedModeSignatureRef.current = remoteSignature;
+      if (pendingLocalModeSignatureRef.current === remoteSignature) {
+        pendingLocalModeSignatureRef.current = "";
+      }
       if (isModeSyncing) {
         setIsModeSyncing(false);
       }
@@ -4297,6 +4559,7 @@ export function App(): React.JSX.Element {
     }
   }, [
     conversationState,
+    activeThreadAgentId,
     defaultModeOption?.mode,
     hasHydratedModeFromLiveState,
     isModeSyncing,
@@ -4307,6 +4570,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     lastAppliedModeSignatureRef.current = "";
+    pendingLocalModeSignatureRef.current = "";
     setHasHydratedModeFromLiveState(false);
     setIsModeSyncing(false);
   }, [selectedThreadId]);
@@ -4518,12 +4782,18 @@ export function App(): React.JSX.Element {
           provider: threadAgentId,
           threadId,
           parts,
+          ...(threadAgentId === "codex" && activeCollaborationModeDraft
+            ? { collaborationMode: activeCollaborationModeDraft }
+            : {}),
           baseUrlOverride:
             selectedThread?.serverBaseUrl ?? primaryServerTarget?.baseUrl ?? serverBaseUrl,
           ...(liveState?.ownerClientId
             ? { ownerClientId: liveState.ownerClientId }
             : {}),
         });
+        if (threadAgentId === "codex") {
+          pendingLocalModeSignatureRef.current = "";
+        }
         await refreshAll();
       } catch (e) {
         setError(toErrorMessage(e));
@@ -4533,6 +4803,7 @@ export function App(): React.JSX.Element {
     },
     [
       activeThreadAgentId,
+      activeCollaborationModeDraft,
       canSendMessageForActiveAgent,
       hasResolvedSelectedThreadProvider,
       liveState?.ownerClientId,
@@ -4560,6 +4831,9 @@ export function App(): React.JSX.Element {
         setError("Thread provider is still loading");
         return;
       }
+      if (!canSetCollaborationMode || !canListCollaborationModes) {
+        return;
+      }
 
       const mode = modes.find((entry) => entry.mode === draft.modeKey) ?? null;
       if (!mode || typeof mode.mode !== "string") {
@@ -4577,6 +4851,11 @@ export function App(): React.JSX.Element {
 
       const previousSignature = lastAppliedModeSignatureRef.current;
       lastAppliedModeSignatureRef.current = signature;
+      if (activeThreadAgentId === "codex") {
+        pendingLocalModeSignatureRef.current = signature;
+        setIsModeSyncing(false);
+        return;
+      }
       setIsModeSyncing(true);
       try {
         setError("");
@@ -4610,6 +4889,8 @@ export function App(): React.JSX.Element {
     },
     [
       activeThreadAgentId,
+      canListCollaborationModes,
+      canSetCollaborationMode,
       hasResolvedSelectedThreadProvider,
       isModeSyncing,
       liveState?.ownerClientId,
@@ -5630,6 +5911,17 @@ export function App(): React.JSX.Element {
                             : Boolean(thread.waitingOnUserInput);
                         const hasWaitingIndicator =
                           waitingOnApproval || waitingOnUserInput;
+                        const sidebarStatus =
+                          isSelected && selectedThreadStatus
+                            ? selectedThreadStatus
+                            : buildThreadStatusSummary({
+                                isGenerating: threadIsGenerating,
+                                waitingOnApproval,
+                                waitingOnUserInput,
+                                lastTurn: undefined,
+                                liveStateError: null,
+                                uiErrorMessage: null,
+                              });
                         return (
                           <Button
                             key={thread.id}
@@ -5665,11 +5957,17 @@ export function App(): React.JSX.Element {
                                 </span>
                               )}
                               <span className="min-w-0 flex-1 truncate">
-                                <span className="truncate">
+                                <span className="block truncate">
                                   {threadLabel(thread)}
                                 </span>
-                                <span className="block truncate text-[10px] text-muted-foreground/60">
-                                  {thread.serverLabel}
+                                <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                                  <span className="truncate">
+                                    {sidebarStatus?.label ?? thread.serverLabel}
+                                  </span>
+                                  <span className="shrink-0">·</span>
+                                  <span className="truncate">
+                                    {thread.serverLabel}
+                                  </span>
                                 </span>
                               </span>
                             </span>
@@ -6251,23 +6549,43 @@ export function App(): React.JSX.Element {
                           className="flex flex-col gap-2"
                         >
                           <AnimatePresence initial={false}>
-                            {isGenerating && (
+                            {selectedThreadStatus && (
                               <motion.div
                                 initial={{ opacity: 0, y: 4 }}
                                 animate={{ opacity: 1, height: "auto" }}
                                 exit={{ opacity: 0, y: 4 }}
                                 transition={{ duration: 0.15 }}
-                                className="px-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+                                className="px-1"
                               >
-                                <span className="reasoning-shimmer font-medium">
-                                  Thinking…
-                                </span>
+                                <div
+                                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${threadStatusClasses(selectedThreadStatus.tone).container}`}
+                                >
+                                  <span
+                                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                      selectedThreadStatus.tone === "progress"
+                                        ? "animate-pulse"
+                                        : ""
+                                    } ${threadStatusClasses(selectedThreadStatus.tone).dot}`}
+                                  />
+                                  <span
+                                    className={`min-w-0 truncate font-medium ${
+                                      selectedThreadStatus.tone === "progress"
+                                        ? "reasoning-shimmer"
+                                        : ""
+                                    }`}
+                                  >
+                                    {selectedThreadStatus.detail
+                                      ? `${selectedThreadStatus.label}: ${selectedThreadStatus.detail}`
+                                      : selectedThreadStatus.label}
+                                  </span>
+                                </div>
                               </motion.div>
                             )}
                           </AnimatePresence>
 
                           <ChatComposer
                             canSend={canUseComposer}
+                            canAttachImages={canAttachImagesForActiveAgent}
                             isBusy={isBusy}
                             isGenerating={isGenerating}
                             placeholder={
@@ -7455,3 +7773,5 @@ export function App(): React.JSX.Element {
     </TooltipProvider>
   );
 }
+
+export default App;

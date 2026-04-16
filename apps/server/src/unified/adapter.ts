@@ -4,7 +4,6 @@ import {
   UserInputRequestSchema,
 } from "@chresmus/protocol";
 import {
-  JsonValueSchema,
   UnifiedFeatureMatrixSchema,
   UNIFIED_COMMAND_KINDS,
   UNIFIED_FEATURE_IDS,
@@ -24,6 +23,21 @@ import {
 import { z } from "zod";
 import type { AgentAdapter } from "../agents/types.js";
 
+const JsonPrimitiveSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+]);
+
+const LocalJsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    JsonPrimitiveSchema,
+    z.array(LocalJsonValueSchema),
+    z.record(LocalJsonValueSchema),
+  ]),
+);
+
 type UnifiedCommandByKind<K extends UnifiedCommandKind> = Extract<
   UnifiedCommand,
   { kind: K }
@@ -40,6 +54,24 @@ type UnifiedCommandHandler<K extends UnifiedCommandKind> = (
 export type UnifiedCommandHandlerTable = {
   [K in UnifiedCommandKind]: UnifiedCommandHandler<K>;
 };
+
+const SendMessageCollaborationModeCarrierSchema = z
+  .object({
+    collaborationMode: z
+      .object({
+        mode: z.string(),
+        settings: z
+          .object({
+            model: z.union([z.string(), z.null()]).optional(),
+            reasoningEffort: z.union([z.string(), z.null()]).optional(),
+            developerInstructions: z.union([z.string(), z.null()]).optional(),
+          })
+          .strict(),
+      })
+      .strict()
+      .optional(),
+  })
+  .passthrough();
 
 export const FEATURE_ID_BY_COMMAND_KIND: Record<
   UnifiedCommandKind,
@@ -311,6 +343,8 @@ function createHandlerTable(
     },
 
     sendMessage: async (command) => {
+      const parsedCommand =
+        SendMessageCollaborationModeCarrierSchema.parse(command);
       await adapter.sendMessage({
         threadId: command.threadId,
         parts: command.parts,
@@ -321,6 +355,35 @@ function createHandlerTable(
         ...(typeof command.isSteering === "boolean"
           ? { isSteering: command.isSteering }
           : {}),
+        ...(parsedCommand.collaborationMode
+          ? {
+              collaborationMode: {
+                mode: parsedCommand.collaborationMode.mode,
+                settings: {
+                  ...(parsedCommand.collaborationMode.settings.model !==
+                  undefined
+                    ? { model: parsedCommand.collaborationMode.settings.model }
+                    : {}),
+                  ...(parsedCommand.collaborationMode.settings.reasoningEffort !==
+                  undefined
+                    ? {
+                        reasoning_effort:
+                          parsedCommand.collaborationMode.settings.reasoningEffort
+                      }
+                    : {}),
+                  ...(parsedCommand.collaborationMode.settings
+                    .developerInstructions !==
+                  undefined
+                    ? {
+                        developer_instructions:
+                          parsedCommand.collaborationMode.settings
+                            .developerInstructions
+                      }
+                    : {})
+                }
+              }
+            }
+          : {})
       });
 
       return {
@@ -1235,15 +1298,15 @@ function mapTurnItem(
 }
 
 function jsonValueFromString(serialized: string): JsonValue {
-  return JsonValueSchema.parse(JSON.parse(serialized));
+  return LocalJsonValueSchema.parse(JSON.parse(serialized));
 }
 
 function jsonArrayFromString(serialized: string): JsonValue[] {
-  return z.array(JsonValueSchema).parse(JSON.parse(serialized));
+  return z.array(LocalJsonValueSchema).parse(JSON.parse(serialized));
 }
 
 function jsonRecordFromString(serialized: string): Record<string, JsonValue> {
-  return z.record(JsonValueSchema).parse(JSON.parse(serialized));
+  return z.record(LocalJsonValueSchema).parse(JSON.parse(serialized));
 }
 
 type MissingCommandHandlers = Exclude<

@@ -331,6 +331,8 @@ let modelsFixture: Record<
   }>
 >;
 
+let sendMessageErrorFixture: string | null;
+
 let readThreadResolver: (
   threadId: string,
   provider: ProviderId | null,
@@ -530,6 +532,7 @@ beforeEach(() => {
     qwen: [],
   };
 
+  sendMessageErrorFixture = null;
   readThreadResolver = (_threadId: string, _provider: ProviderId | null) =>
     null;
   liveStateResolver = (threadId: string, _provider: ProviderId) => ({
@@ -659,6 +662,16 @@ vi.stubGlobal(
             threadId: body.threadId ?? "",
             ownerClientId: null,
             events: [],
+          },
+        });
+      }
+
+      if (body.kind === "sendMessage" && sendMessageErrorFixture) {
+        return jsonErrorResponse({
+          ok: false,
+          error: {
+            code: "sendMessageFailed",
+            message: sendMessageErrorFixture,
           },
         });
       }
@@ -950,6 +963,294 @@ describe("App", () => {
     });
   });
 
+  it("sends codex collaboration mode with the next message instead of calling setCollaborationMode on toggle", async () => {
+    const threadId = "thread-codex-mode-send";
+    window.history.replaceState(null, "", `/threads/${threadId}`);
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: threadId,
+          provider: "codex",
+          preview: "codex thread",
+          title: "codex thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000001,
+          cwd: "/tmp/project",
+          source: "codex",
+          isGenerating: false,
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (targetThreadId: string) => ({
+      ok: true,
+      thread: buildConversationStateFixture(targetThreadId, "gpt-5.3-codex"),
+    });
+
+    liveStateResolver = (targetThreadId: string, _provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: "client-1",
+      conversationState: buildConversationStateFixture(
+        targetThreadId,
+        "gpt-5.3-codex",
+      ),
+      liveStateError: null,
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Plan" }));
+
+    const setModeCallsAfterToggle = vi
+      .mocked(fetch)
+      .mock.calls.filter(([, requestInit]) => {
+        if (!requestInit || typeof requestInit.body !== "string") {
+          return false;
+        }
+        const parsed = JSON.parse(requestInit.body) as { kind?: string };
+        return parsed.kind === "setCollaborationMode";
+      });
+    expect(setModeCallsAfterToggle).toHaveLength(0);
+
+    const composer = await screen.findByPlaceholderText("Message Codex…");
+    fireEvent.change(composer, { target: { value: "continue" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(fetch).mock.calls.some(([, requestInit]) => {
+          if (!requestInit || typeof requestInit.body !== "string") {
+            return false;
+          }
+          const parsed = JSON.parse(requestInit.body) as {
+            kind?: string;
+            collaborationMode?: {
+              mode?: string;
+            };
+          };
+          return (
+            parsed.kind === "sendMessage" &&
+            parsed.collaborationMode?.mode === "plan"
+          );
+        }),
+      ).toBe(true);
+    });
+
+    expect(
+      screen.queryByText(/Feature setCollaborationMode is unavailable for codex/),
+    ).toBeNull();
+  });
+
+  it("does not call setCollaborationMode when switching to a provider that does not support it", async () => {
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: "thread-codex-mode",
+          provider: "codex",
+          preview: "codex thread",
+          title: "codex thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000001,
+          cwd: "/tmp/project",
+          source: "codex",
+        },
+        {
+          id: "thread-opencode-mode",
+          provider: "opencode",
+          preview: "opencode thread",
+          title: "opencode thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "opencode",
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (threadId: string, provider: ProviderId | null) => {
+      const resolvedProvider = provider ?? "codex";
+      const modelId =
+        resolvedProvider === "opencode" ? "openai/gpt-4.1" : "gpt-5.3-codex";
+      return {
+        ok: true,
+        thread: buildConversationStateFixture(threadId, modelId, {
+          provider: resolvedProvider,
+        }),
+      };
+    };
+
+    render(<App />);
+
+    fireEvent.click((await screen.findAllByText("codex thread"))[0]!);
+    fireEvent.click((await screen.findAllByText("opencode thread"))[0]!);
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(fetch).mock.calls.some(([, requestInit]) => {
+          if (!requestInit || typeof requestInit.body !== "string") {
+            return false;
+          }
+          const parsed = JSON.parse(requestInit.body) as { kind?: string };
+          return parsed.kind === "setCollaborationMode";
+        }),
+      ).toBe(false);
+    });
+
+    expect(
+      screen.queryByText(/Feature setCollaborationMode is unavailable for/),
+    ).toBeNull();
+  });
+
+  it("keeps image attachments enabled for non-codex threads", async () => {
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: "thread-codex-images",
+          provider: "codex",
+          preview: "codex thread",
+          title: "codex thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000001,
+          cwd: "/tmp/project",
+          source: "codex",
+        },
+        {
+          id: "thread-claude-images",
+          provider: "claude",
+          preview: "claude thread",
+          title: "claude thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "claude",
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    featureMatrixFixture.features.claude = buildFeatureSet(codexCapabilities, {
+      enabled: true,
+      connected: true,
+    });
+
+    readThreadResolver = (threadId: string, provider: ProviderId | null) => {
+      const resolvedProvider = provider ?? "codex";
+      const modelId =
+        resolvedProvider === "claude" ? "default" : "gpt-5.3-codex";
+      return {
+        ok: true,
+        thread: buildConversationStateFixture(threadId, modelId, {
+          provider: resolvedProvider,
+        }),
+      };
+    };
+
+    liveStateResolver = (threadId: string, provider: ProviderId) => {
+      const modelId = provider === "claude" ? "default" : "gpt-5.3-codex";
+      return {
+        kind: "readLiveState",
+        threadId,
+        ownerClientId: "client-1",
+        conversationState: buildConversationStateFixture(threadId, modelId, {
+          provider,
+        }),
+        liveStateError: null,
+      };
+    };
+
+    render(<App />);
+
+    fireEvent.click((await screen.findAllByText("codex thread"))[0]!);
+
+    const attachButton = await screen.findByRole("button", {
+      name: "Attach images",
+    });
+    expect(attachButton.hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click((await screen.findAllByText("claude thread"))[0]!);
+
+    await waitFor(() => {
+      expect(
+        screen
+          .getByRole("button", {
+            name: "Attach images",
+          })
+          .hasAttribute("disabled"),
+      ).toBe(false);
+    });
+  });
+
+  it("allows pasted images for non-codex threads", async () => {
+    const threadId = "thread-claude-images";
+    window.history.replaceState(null, "", `/threads/${threadId}`);
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: threadId,
+          provider: "claude",
+          preview: "claude thread",
+          title: "claude thread",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "claude",
+          isGenerating: false,
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    featureMatrixFixture.features.claude = buildFeatureSet(codexCapabilities, {
+      enabled: true,
+      connected: true,
+    });
+
+    readThreadResolver = (targetThreadId: string, provider: ProviderId | null) => ({
+      ok: true,
+      thread: buildConversationStateFixture(targetThreadId, "default", {
+        provider: provider ?? "claude",
+      }),
+    });
+
+    liveStateResolver = (targetThreadId: string, provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: "client-1",
+      conversationState: buildConversationStateFixture(targetThreadId, "default", {
+        provider,
+      }),
+      liveStateError: null,
+    });
+
+    render(<App />);
+
+    const composer = await screen.findByPlaceholderText("Message Claude Code…");
+    const imageFile = new File(["binary"], "example.png", {
+      type: "image/png",
+    });
+
+    fireEvent.paste(composer, {
+      clipboardData: {
+        files: [imageFile],
+      },
+    });
+
+    expect(await screen.findByAltText("example.png")).toBeTruthy();
+  });
+
   it("shows waiting indicators in the sidebar from thread summaries", async () => {
     threadsFixture = {
       ok: true,
@@ -1053,6 +1354,336 @@ describe("App", () => {
 
     expect(await screen.findByTitle("Waiting for approval")).toBeTruthy();
     expect(await screen.findByTitle("Waiting for user input")).toBeTruthy();
+  });
+
+  it("shows a runtime status banner while a thread is responding", async () => {
+    const threadId = "thread-responding";
+    const respondingThread: UnifiedThreadFixture = {
+      id: threadId,
+      provider: "codex",
+      turns: [
+        {
+          id: "turn-1",
+          status: "inProgress",
+          items: [],
+        },
+      ],
+      requests: [],
+      updatedAt: 1700000000,
+      latestModel: "gpt-5.3-codex",
+      latestReasoningEffort: "medium",
+      latestCollaborationMode: {
+        mode: "default",
+        settings: {
+          model: "gpt-5.3-codex",
+          reasoningEffort: "medium",
+          developerInstructions: null,
+        },
+      },
+    };
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: threadId,
+          provider: "codex",
+          preview: "thread preview",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "codex",
+          isGenerating: true,
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (targetThreadId: string) => ({
+      ok: true,
+      thread: {
+        ...respondingThread,
+        id: targetThreadId,
+      },
+    });
+
+    liveStateResolver = (targetThreadId: string, _provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: "client-1",
+      conversationState: {
+        ...respondingThread,
+        id: targetThreadId,
+      },
+      liveStateError: null,
+    });
+
+    render(<App />);
+
+    expect(await screen.findAllByText("Responding")).toHaveLength(2);
+  });
+
+  it("does not show responding for an old thread when only read history is stuck in progress", async () => {
+    const threadId = "thread-stale-progress";
+    window.history.replaceState(null, "", `/threads/${threadId}`);
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: threadId,
+          provider: "codex",
+          preview: "thread preview",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "codex",
+          isGenerating: false,
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (targetThreadId: string) => ({
+      ok: true,
+      thread: {
+        id: targetThreadId,
+        provider: "codex",
+        turns: [
+          {
+            id: "turn-1",
+            status: "inProgress",
+            items: [],
+          },
+        ],
+        requests: [],
+        updatedAt: 1700000000,
+        latestModel: "gpt-5.3-codex",
+        latestReasoningEffort: "medium",
+        latestCollaborationMode: {
+          mode: "default",
+          settings: {
+            model: "gpt-5.3-codex",
+            reasoningEffort: "medium",
+            developerInstructions: null,
+          },
+        },
+      },
+    });
+
+    liveStateResolver = (targetThreadId: string, _provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: null,
+      conversationState: null,
+      liveStateError: null,
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(([requestUrl]) =>
+            String(requestUrl).includes(`/api/unified/thread/${threadId}`),
+          ),
+      ).toBe(true);
+    });
+    expect(screen.queryByText("Responding")).toBeNull();
+  });
+
+  it("shows send-message errors in the compact chat status line", async () => {
+    const threadId = "thread-send-error";
+    window.history.replaceState(null, "", `/threads/${threadId}`);
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: threadId,
+          provider: "codex",
+          preview: "thread preview",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "codex",
+          isGenerating: false,
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (targetThreadId: string) => ({
+      ok: true,
+      thread: buildConversationStateFixture(targetThreadId, "gpt-5.3-codex"),
+    });
+
+    liveStateResolver = (targetThreadId: string, _provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: "client-1",
+      conversationState: buildConversationStateFixture(
+        targetThreadId,
+        "gpt-5.3-codex",
+      ),
+      liveStateError: null,
+    });
+
+    sendMessageErrorFixture = "Network request failed";
+
+    render(<App />);
+
+    const composer = await screen.findByPlaceholderText("Message Codex…");
+    fireEvent.change(composer, { target: { value: "continue" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(
+      await screen.findByText(
+        "Error: Request failed. Check network/server, then send again.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows actionable model-call errors in the compact chat status line", async () => {
+    const threadId = "thread-model-error";
+    window.history.replaceState(null, "", `/threads/${threadId}`);
+
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: threadId,
+          provider: "codex",
+          preview: "thread preview",
+          createdAt: 1700000000,
+          updatedAt: 1700000000,
+          cwd: "/tmp/project",
+          source: "codex",
+          isGenerating: false,
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (targetThreadId: string) => ({
+      ok: true,
+      thread: buildConversationStateFixture(targetThreadId, "gpt-5.3-codex"),
+    });
+
+    liveStateResolver = (targetThreadId: string, _provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: "client-1",
+      conversationState: buildConversationStateFixture(
+        targetThreadId,
+        "gpt-5.3-codex",
+      ),
+      liveStateError: null,
+    });
+
+    sendMessageErrorFixture = "Model call failed";
+
+    render(<App />);
+
+    const composer = await screen.findByPlaceholderText("Message Codex…");
+    fireEvent.change(composer, { target: { value: "continue" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(
+      await screen.findByText(
+        "Error: Model call failed. Send again. If it keeps failing, switch model or check the provider/server status.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("uses metadata-only refresh when revisiting a cached thread", async () => {
+    threadsFixture = {
+      ok: true,
+      data: [
+        {
+          id: "thread-a",
+          provider: "codex",
+          preview: "thread a",
+          title: "Thread A",
+          createdAt: 1700000000,
+          updatedAt: 1700000001,
+          cwd: "/tmp/project",
+          source: "codex",
+        },
+        {
+          id: "thread-b",
+          provider: "codex",
+          preview: "thread b",
+          title: "Thread B",
+          createdAt: 1700000000,
+          updatedAt: 1700000002,
+          cwd: "/tmp/project",
+          source: "codex",
+        },
+      ],
+      cursors: buildEmptyThreadListCursors(),
+      errors: buildEmptyThreadListErrors(),
+    };
+
+    readThreadResolver = (targetThreadId: string) => ({
+      ok: true,
+      thread: buildConversationStateFixture(targetThreadId, "gpt-5.3-codex"),
+    });
+
+    liveStateResolver = (targetThreadId: string, _provider: ProviderId) => ({
+      kind: "readLiveState",
+      threadId: targetThreadId,
+      ownerClientId: "client-1",
+      conversationState: buildConversationStateFixture(
+        targetThreadId,
+        "gpt-5.3-codex",
+      ),
+      liveStateError: null,
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("Thread B");
+
+    fireEvent.click(screen.getAllByText("Thread A")[0]!);
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(([requestUrl]) =>
+            String(requestUrl).includes("/api/unified/thread/thread-a"),
+          ),
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getAllByText("Thread B")[0]!);
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(([requestUrl]) =>
+            String(requestUrl).includes("/api/unified/thread/thread-b"),
+          ),
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getAllByText("Thread A")[0]!);
+    await waitFor(() => {
+      expect(
+        vi.mocked(fetch).mock.calls.some(([requestUrl]) => {
+          const url = String(requestUrl);
+          return (
+            url.includes("/api/unified/thread/thread-a") &&
+            url.includes("includeTurns=0")
+          );
+        }),
+      ).toBe(true);
+    });
   });
 
   it("prefers live-state requests when read thread is newer but has no pending requests", async () => {

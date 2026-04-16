@@ -12,6 +12,7 @@ type ComposerImageAttachment = {
 
 type ChatComposerProps = {
   canSend: boolean;
+  canAttachImages: boolean;
   isBusy: boolean;
   isGenerating: boolean;
   placeholder?: string;
@@ -39,6 +40,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
 
 export function ChatComposer({
   canSend,
+  canAttachImages,
   isBusy,
   isGenerating,
   placeholder = "Message Codex…",
@@ -137,7 +139,7 @@ export function ChatComposer({
   }, []);
 
   const attachImageFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0) {
+    if (!canAttachImages || files.length === 0) {
       return;
     }
     const nextAttachments = await Promise.all(
@@ -148,10 +150,10 @@ export function ChatComposer({
       })),
     );
     setAttachments((current) => [...current, ...nextAttachments]);
-  }, []);
+  }, [canAttachImages]);
 
   const handleAttachImages = useCallback(async (files: FileList | null) => {
-    if (!files || files.length === 0) {
+    if (!canAttachImages || !files || files.length === 0) {
       return;
     }
     const imageFiles = Array.from(files).filter((file) =>
@@ -161,7 +163,14 @@ export function ChatComposer({
       return;
     }
     await attachImageFiles(imageFiles);
-  }, [attachImageFiles]);
+  }, [attachImageFiles, canAttachImages]);
+
+  useEffect(() => {
+    if (canAttachImages) {
+      return;
+    }
+    setAttachments([]);
+  }, [canAttachImages]);
 
   const removeAttachment = useCallback((attachmentId: string) => {
     setAttachments((current) =>
@@ -222,7 +231,7 @@ export function ChatComposer({
           onClick={() => {
             fileInputRef.current?.click();
           }}
-          disabled={!canSend || isBusy}
+          disabled={!canAttachImages || !canSend || isBusy}
           title="Attach images"
           aria-label="Attach images"
         >
@@ -247,6 +256,9 @@ export function ChatComposer({
             }
           }}
           onPaste={(event) => {
+            if (!canAttachImages) {
+              return;
+            }
             const files = Array.from(event.clipboardData.files).filter((file) =>
               file.type.startsWith("image/"),
             );

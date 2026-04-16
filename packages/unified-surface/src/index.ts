@@ -958,7 +958,20 @@ const UnifiedCommandSendMessageSchema = z
     parts: z.array(UnifiedInputPartSchema).min(1),
     ownerClientId: z.string().optional(),
     cwd: z.string().optional(),
-    isSteering: z.boolean().optional()
+    isSteering: z.boolean().optional(),
+    collaborationMode: z
+      .object({
+        mode: NonEmptyStringSchema,
+        settings: z
+          .object({
+            model: NullableStringSchema.optional(),
+            reasoningEffort: NullableStringSchema.optional(),
+            developerInstructions: NullableStringSchema.optional()
+          })
+          .strict()
+      })
+      .strict()
+      .optional()
   })
   .strict();
 
