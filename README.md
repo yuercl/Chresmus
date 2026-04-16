@@ -259,8 +259,7 @@ pnpm run android:build
 
 ### CI mobile artifacts
 
-- GitHub Actions `ios-build` now packages and uploads an unsigned `.ipa` by default so you can download it and re-sign it locally with Sideloadly, AltStore, or Xcode.
-- The same workflow also uploads the generated `.xcarchive` and Xcode project in case you prefer to export or inspect the app yourself.
+- GitHub Actions `ios-build` uploads unsigned iOS build artifacts by default so you can re-sign them locally with Xcode, Sideloadly, or AltStore.
 - If Apple signing secrets are configured, the same workflow can also export a signed `.ipa`.
 - GitHub Actions `android-build` uploads Android `.apk` artifacts directly.
 

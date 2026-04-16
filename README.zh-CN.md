@@ -258,8 +258,7 @@ pnpm run android:build
 
 ### CI 移动端产物
 
-- GitHub Actions 的 `ios-build` 现在默认会封装并上传一个未签名 `.ipa`，你可以下载后再用 Sideloadly、AltStore 或 Xcode 自行签名。
-- 同一个 workflow 也会继续上传生成出来的 `.xcarchive` 和 Xcode 工程，方便你自己导出或检查。
+- GitHub Actions 的 `ios-build` 默认上传未签名的 iOS 构建产物，供你在本地用 Xcode、Sideloadly 或 AltStore 二次签名。
 - 如果配置了 Apple 签名 secrets，同一个 workflow 也可以直接导出已签名的 `.ipa`。
 - GitHub Actions 的 `android-build` 会直接上传 Android `.apk` 产物。
 
