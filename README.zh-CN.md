@@ -238,6 +238,10 @@ pnpm run android:init
 ### 构建
 
 ```bash
+# 构建未签名的通用 macOS 应用（同时支持 Apple Silicon 和 Intel）
+pnpm run macos:build
+# 输出：apps/tauri/src-tauri/target/universal-apple-darwin/release/bundle/
+
 # 构建用于本地二次签名的 iOS 产物
 pnpm run ios:build
 # 输出：apps/tauri/src-tauri/gen/apple/build/**/*.xcarchive
@@ -252,12 +256,14 @@ pnpm run android:build
 从仓库根目录使用快捷命令：
 
 ```bash
+pnpm run macos:build
 pnpm run ios:build
 pnpm run android:build
 ```
 
 ### CI 移动端产物
 
+- GitHub Actions 的 `macos-build` 会上传未签名的通用 macOS 产物，同时支持 Apple Silicon 和 Intel Mac。
 - GitHub Actions 的 `ios-build` 默认上传未签名的 iOS 构建产物，供你在本地用 Xcode、Sideloadly 或 AltStore 二次签名。
 - 如果配置了 Apple 签名 secrets，同一个 workflow 也可以直接导出已签名的 `.ipa`。
 - GitHub Actions 的 `android-build` 会直接上传 Android `.apk` 产物。

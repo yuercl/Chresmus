@@ -1,0 +1,76 @@
+name: macos-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - ".github/workflows/macos-build.yml"
+      - "apps/tauri/**"
+      - "apps/web/**"
+      - "apps/server/**"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "scripts/**"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tauri/src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm run prepare:workspace-dist
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Generate Tauri icons
+        run: pnpm --filter @chresmus/tauri icon
+
+      - name: Build unsigned macOS universal app
+        run: pnpm run macos:build
+
+      - name: Upload macOS artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-artifacts
+          path: |
+            apps/tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+            apps/tauri/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            apps/tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: warn

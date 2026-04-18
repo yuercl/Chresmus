@@ -239,6 +239,10 @@ pnpm run android:init
 ### Building
 
 ```bash
+# Build unsigned universal macOS app (Apple Silicon + Intel)
+pnpm run macos:build
+# Output: apps/tauri/src-tauri/target/universal-apple-darwin/release/bundle/
+
 # Build iOS artifacts for local re-signing
 pnpm run ios:build
 # Output: apps/tauri/src-tauri/gen/apple/build/**/*.xcarchive
@@ -253,12 +257,14 @@ pnpm run android:build
 Shorthand from the repo root:
 
 ```bash
+pnpm run macos:build
 pnpm run ios:build
 pnpm run android:build
 ```
 
 ### CI mobile artifacts
 
+- GitHub Actions `macos-build` uploads unsigned universal macOS artifacts for both Apple Silicon and Intel Macs.
 - GitHub Actions `ios-build` uploads unsigned iOS build artifacts by default so you can re-sign them locally with Xcode, Sideloadly, or AltStore.
 - If Apple signing secrets are configured, the same workflow can also export a signed `.ipa`.
 - GitHub Actions `android-build` uploads Android `.apk` artifacts directly.

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "macos:build": "tauri build --target universal-apple-darwin --no-sign",
     "icon": "tauri icon app-icon.svg",
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",

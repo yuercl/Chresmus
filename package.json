@@ -28,6 +28,7 @@
     "screenshot:codex": "node skills/codex-window-debug/tools/codex-window-screenshot.mjs",
     "tauri:dev": "pnpm --filter @chresmus/tauri dev",
     "tauri:build": "pnpm --filter @chresmus/tauri build",
+    "macos:build": "pnpm --filter @chresmus/tauri macos:build",
     "ios:init": "pnpm --filter @chresmus/tauri ios:init",
     "ios:build": "pnpm --filter @chresmus/tauri ios:build",
     "android:init": "pnpm --filter @chresmus/tauri android:init",
